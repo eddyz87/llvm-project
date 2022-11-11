@@ -220,6 +220,43 @@ static bool EvaluateDefined(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
   return false;
 }
 
+static bool EvaluateIsTypeDefined(PPValue &Result, Token &PeekTok,
+                                  Preprocessor &PP) {
+  Result.setBegin(PeekTok.getLocation());
+  // '('
+  PP.LexUnexpandedNonComment(PeekTok);
+  if (!PeekTok.is(tok::l_paren)) {
+    PP.Diag(PeekTok.getLocation(), diag::err_pp_expected_after)
+      << "'__is_type_defined'" << tok::l_paren;
+    return true;
+  }
+  SourceLocation LParenLoc = PeekTok.getLocation();
+
+  // type name
+  PP.LexUnexpandedNonComment(PeekTok);
+  if (PP.CheckMacroName(PeekTok, MU_Other))
+    return true;
+  IdentifierInfo *II = PeekTok.getIdentifierInfo();
+  if (PP.IsTypeDefinedFn && PP.IsTypeDefinedFn(II))
+    Result.Val = 1;
+  else
+    Result.Val = 0;
+
+  // ')'
+  PP.LexUnexpandedNonComment(PeekTok);
+  if (!PeekTok.is(tok::r_paren)) {
+    PP.Diag(PeekTok.getLocation(), diag::err_pp_expected_after)
+      << "'__is_type_defined'" << tok::r_paren;
+    PP.Diag(LParenLoc, diag::note_matching) << tok::l_paren;
+    return true;
+  }
+
+  PP.LexNonComment(PeekTok);
+  Result.setEnd(PeekTok.getLocation());
+
+  return false;
+}
+
 /// EvaluateValue - Evaluate the token PeekTok (and any others needed) and
 /// return the computed value in Result.  Return true if there was an error
 /// parsing.  This function also returns information about the form of the
@@ -250,6 +287,8 @@ static bool EvaluateValue(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
       // Handle "defined X" and "defined(X)".
       if (II->isStr("defined"))
         return EvaluateDefined(Result, PeekTok, DT, ValueLive, PP);
+      if (II->isStr("__is_type_defined"))
+        return EvaluateIsTypeDefined(Result, PeekTok, PP);
 
       if (!II->isCPlusPlusOperatorKeyword()) {
         // If this identifier isn't 'defined' or one of the special

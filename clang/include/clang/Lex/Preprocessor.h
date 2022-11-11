@@ -2686,6 +2686,8 @@ public:
                                       const LangOptions &LangOpts,
                                       const TargetInfo &TI);
 
+  llvm::unique_function<bool(IdentifierInfo *II)> IsTypeDefinedFn;
+
 private:
   void emitMacroDeprecationWarning(const Token &Identifier) const;
   void emitRestrictExpansionWarning(const Token &Identifier) const;

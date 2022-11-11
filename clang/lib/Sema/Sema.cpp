@@ -181,6 +181,15 @@ public:
 } // end namespace sema
 } // end namespace clang
 
+static bool PPIsTypeDefinedCallback(Sema &S, IdentifierInfo *II) {
+  if (S.LookupSingleName(S.TUScope, DeclarationName(II), SourceLocation(),
+                         Sema::LookupTagName))
+    return true;
+  auto *MaybeTypedef = S.LookupSingleName(S.TUScope, DeclarationName(II),
+                                          SourceLocation(), Sema::LookupAnyName);
+  return llvm::isa_and_nonnull<TypedefNameDecl>(MaybeTypedef);
+}
+
 const unsigned Sema::MaxAlignmentExponent;
 const uint64_t Sema::MaximumAlignment;
 
@@ -252,6 +261,9 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
   SemaPPCallbackHandler->set(*this);
 
   CurFPFeatures.setFPEvalMethod(PP.getCurrentFPEvalMethod());
+  PP.IsTypeDefinedFn = [=](IdentifierInfo *II) {
+    return PPIsTypeDefinedCallback(*this, II);
+  };
 }
 
 // Anchor Sema's type info to this TU.
