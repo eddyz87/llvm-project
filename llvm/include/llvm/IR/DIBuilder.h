@@ -294,6 +294,8 @@ namespace llvm {
                                  DINode::DIFlags Flags = DINode::FlagZero,
                                  DINodeArray Annotations = nullptr);
 
+    DIDerivedType *createAnnotationsPlaceholder();
+
     /// Create debugging information entry for a 'friend'.
     DIDerivedType *createFriend(DIType *Ty, DIType *FriendTy);
 

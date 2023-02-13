@@ -217,6 +217,7 @@ class CGDebugInfo {
   llvm::DIType *CreateType(const MemberPointerType *Ty, llvm::DIFile *F);
   llvm::DIType *CreateType(const AtomicType *Ty, llvm::DIFile *F);
   llvm::DIType *CreateType(const PipeType *Ty, llvm::DIFile *F);
+  llvm::DIType *CreateType(const BTFTagAttributedType *Ty, llvm::DIFile *F);
   /// Get enumeration type.
   llvm::DIType *CreateEnumType(const EnumType *Ty);
   llvm::DIType *CreateTypeDefinition(const EnumType *Ty);
