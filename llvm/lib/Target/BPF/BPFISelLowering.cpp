@@ -229,12 +229,17 @@ bool BPFTargetLowering::isZExtFree(EVT VT1, EVT VT2) const {
 
 bool BPFTargetLowering::isZExtFree(SDValue Val, EVT VT2) const {
   EVT VT1 = Val.getValueType();
-  if (Val.getOpcode() == ISD::LOAD && VT1.isSimple() && VT2.isSimple()) {
-    MVT MT1 = VT1.getSimpleVT().SimpleTy;
-    MVT MT2 = VT2.getSimpleVT().SimpleTy;
+  MVT MT1 = VT1.getSimpleVT().SimpleTy;
+  MVT MT2 = VT2.getSimpleVT().SimpleTy;
+  if (Val.getOpcode() == ISD::LOAD) {
     if ((MT1 == MVT::i8 || MT1 == MVT::i16 || MT1 == MVT::i32) &&
         (MT2 == MVT::i32 || MT2 == MVT::i64))
       return true;
+  } else if (Val.getOpcode() == ISD::TRUNCATE) {
+    // Zero extension of truncate is lowered as (and Val 0xffff_ffff),
+    // which is further converted to (shr 32 (shl 32 Val))
+    if (MT1 == MVT::i32 && MT2 == MVT::i64)
+      return false;
   }
   return TargetLoweringBase::isZExtFree(Val, VT2);
 }
