@@ -88,3 +88,26 @@ bool BPFTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
 
   return true;
 }
+
+bool BPFTargetInfo::validateConstraintModifier(
+    StringRef Constraint, char Modifier, unsigned Size,
+    std::string &SuggestedModifier) const {
+  Constraint = Constraint.ltrim("=+&");
+  // Valid cases:
+  // - 'r', 'g' with 64-bit argument
+  // - 'r', 'g' with 32-bit argument (when HasAlu32)
+  // - 'w' with 32-bit argument (when HasAlu32)
+  switch (Constraint[0]) {
+  default:
+    return true;
+  case 'g':
+  case 'r':
+    if (Size == 64 || (Size == 32 && HasAlu32))
+        return true;
+    return false;
+  case 'w':
+    if (Size == 32 && HasAlu32)
+      return true;
+    return false;
+  }
+}

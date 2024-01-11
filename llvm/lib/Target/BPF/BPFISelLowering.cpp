@@ -266,6 +266,8 @@ BPFTargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
     // GCC Constraint Letters
     switch (Constraint[0]) {
     case 'r': // GENERAL_REGS
+      if (HasAlu32 && VT == MVT::i32)
+        return std::make_pair(0U, &BPF::GPR32RegClass);
       return std::make_pair(0U, &BPF::GPRRegClass);
     case 'w':
       if (HasAlu32)

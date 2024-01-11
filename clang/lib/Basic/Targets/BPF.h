@@ -85,6 +85,10 @@ public:
     return true;
   }
 
+  bool
+  validateConstraintModifier(StringRef Constraint, char Modifier, unsigned Size,
+                             std::string &SuggestedModifier) const override;
+
   ArrayRef<TargetInfo::GCCRegAlias> getGCCRegAliases() const override {
     return std::nullopt;
   }
