@@ -77,10 +77,10 @@ void BPFInstrInfo::expandMEMCPY(MachineBasicBlock::iterator MI) const {
   for(unsigned I = 0; I < IterationNum; ++I) {
     BuildMI(*BB, MI, dl, get(LdOpc))
             .addReg(ScratchReg, RegState::Define).addReg(SrcReg)
-            .addImm(I * Alignment);
+            .addImm(I * Alignment).addImm(0); // TODO: inherit address space
     BuildMI(*BB, MI, dl, get(StOpc))
             .addReg(ScratchReg, RegState::Kill).addReg(DstReg)
-            .addImm(I * Alignment);
+            .addImm(I * Alignment).addImm(0); // TODO: inherit address space
   }
 
   unsigned BytesLeft = CopyLen & (Alignment - 1);
@@ -90,23 +90,23 @@ void BPFInstrInfo::expandMEMCPY(MachineBasicBlock::iterator MI) const {
   bool Hanging1Byte = BytesLeft & 0x1;
   if (Hanging4Byte) {
     BuildMI(*BB, MI, dl, get(BPF::LDW))
-            .addReg(ScratchReg, RegState::Define).addReg(SrcReg).addImm(Offset);
+      .addReg(ScratchReg, RegState::Define).addReg(SrcReg).addImm(Offset).addImm(0);
     BuildMI(*BB, MI, dl, get(BPF::STW))
-            .addReg(ScratchReg, RegState::Kill).addReg(DstReg).addImm(Offset);
+      .addReg(ScratchReg, RegState::Kill).addReg(DstReg).addImm(Offset).addImm(0);
     Offset += 4;
   }
   if (Hanging2Byte) {
     BuildMI(*BB, MI, dl, get(BPF::LDH))
-            .addReg(ScratchReg, RegState::Define).addReg(SrcReg).addImm(Offset);
+      .addReg(ScratchReg, RegState::Define).addReg(SrcReg).addImm(Offset).addImm(0);
     BuildMI(*BB, MI, dl, get(BPF::STH))
-            .addReg(ScratchReg, RegState::Kill).addReg(DstReg).addImm(Offset);
+      .addReg(ScratchReg, RegState::Kill).addReg(DstReg).addImm(Offset).addImm(0);
     Offset += 2;
   }
   if (Hanging1Byte) {
     BuildMI(*BB, MI, dl, get(BPF::LDB))
-            .addReg(ScratchReg, RegState::Define).addReg(SrcReg).addImm(Offset);
+      .addReg(ScratchReg, RegState::Define).addReg(SrcReg).addImm(Offset).addImm(0);
     BuildMI(*BB, MI, dl, get(BPF::STB))
-            .addReg(ScratchReg, RegState::Kill).addReg(DstReg).addImm(Offset);
+      .addReg(ScratchReg, RegState::Kill).addReg(DstReg).addImm(Offset).addImm(0);
   }
 
   BB->erase(MI);
@@ -135,11 +135,13 @@ void BPFInstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
     BuildMI(MBB, I, DL, get(BPF::STD))
         .addReg(SrcReg, getKillRegState(IsKill))
         .addFrameIndex(FI)
+        .addImm(0)
         .addImm(0);
   else if (RC == &BPF::GPR32RegClass)
     BuildMI(MBB, I, DL, get(BPF::STW32))
         .addReg(SrcReg, getKillRegState(IsKill))
         .addFrameIndex(FI)
+        .addImm(0)
         .addImm(0);
   else
     llvm_unreachable("Can't store this register to stack slot");
@@ -156,9 +158,9 @@ void BPFInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
     DL = I->getDebugLoc();
 
   if (RC == &BPF::GPRRegClass)
-    BuildMI(MBB, I, DL, get(BPF::LDD), DestReg).addFrameIndex(FI).addImm(0);
+    BuildMI(MBB, I, DL, get(BPF::LDD), DestReg).addFrameIndex(FI).addImm(0).addImm(0);
   else if (RC == &BPF::GPR32RegClass)
-    BuildMI(MBB, I, DL, get(BPF::LDW32), DestReg).addFrameIndex(FI).addImm(0);
+    BuildMI(MBB, I, DL, get(BPF::LDW32), DestReg).addFrameIndex(FI).addImm(0).addImm(0);
   else
     llvm_unreachable("Can't load this register from stack slot");
 }

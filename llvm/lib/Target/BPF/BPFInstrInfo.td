@@ -97,7 +97,8 @@ def imm_to_i64 : SDNodeXForm<timm, [{
 }]>;
 
 // Addressing modes.
-def ADDRri : ComplexPattern<i64, 2, "SelectAddr", [], []>;
+def ADDRri    : ComplexPattern<i64, 2, "SelectAddr",   [], [SDNPWantParent]>;
+def ADDRri_as : ComplexPattern<i64, 3, "SelectAddrAS", [], [SDNPWantParent]>;
 def FIri : ComplexPattern<i64, 2, "SelectFIAddr", [add, or], []>;
 
 // Address operands
@@ -458,20 +459,22 @@ def LD_pseudo
 class STORE<BPFWidthModifer SizeOp, string OpcodeStr, list<dag> Pattern>
     : TYPE_LD_ST<BPF_MEM.Value, SizeOp.Value,
                  (outs),
-                 (ins GPR:$src, MEMri:$addr),
+                 (ins GPR:$src, MEMri:$addr, i64imm:$aspace),
                  "*("#OpcodeStr#" *)($addr) = $src",
                  Pattern> {
   bits<4> src;
   bits<20> addr;
+  bits<64> aspace;
 
   let Inst{51-48} = addr{19-16}; // base reg
   let Inst{55-52} = src;
   let Inst{47-32} = addr{15-0}; // offset
+  let Inst{31-0}  = aspace{31-0};
   let BPFClass = BPF_STX;
 }
 
 class STOREi64<BPFWidthModifer Opc, string OpcodeStr, PatFrag OpNode>
-    : STORE<Opc, OpcodeStr, [(OpNode GPR:$src, ADDRri:$addr)]>;
+    : STORE<Opc, OpcodeStr, [(OpNode GPR:$src, (ADDRri_as MEMri:$addr, i64imm:$aspace))]>;
 
 let Predicates = [BPFNoALU32] in {
   def STW : STOREi64<BPF_W, "u32", truncstorei32>;
@@ -528,20 +531,23 @@ let Predicates = [BPFHasALU32, BPFHasStoreImm] in {
 class LOAD<BPFWidthModifer SizeOp, BPFModeModifer ModOp, string OpcodeStr, list<dag> Pattern>
     : TYPE_LD_ST<ModOp.Value, SizeOp.Value,
                  (outs GPR:$dst),
-                 (ins MEMri:$addr),
+                 (ins MEMri:$addr, i64imm:$aspace),
                  "$dst = *("#OpcodeStr#" *)($addr)",
                  Pattern> {
   bits<4> dst;
   bits<20> addr;
+  bits<64> aspace;
 
   let Inst{51-48} = dst;
   let Inst{55-52} = addr{19-16};
   let Inst{47-32} = addr{15-0};
+  let Inst{31-0}  = aspace{31-0};
   let BPFClass = BPF_LDX;
 }
 
 class LOADi64<BPFWidthModifer SizeOp, BPFModeModifer ModOp, string OpcodeStr, PatFrag OpNode>
-    : LOAD<SizeOp, ModOp, OpcodeStr, [(set i64:$dst, (OpNode ADDRri:$addr))]>;
+    : LOAD<SizeOp, ModOp, OpcodeStr, [(set i64:$dst,
+                                      (OpNode (ADDRri_as MEMri:$addr, i64imm:$aspace)))]>;
 
 let isCodeGenOnly = 1 in {
   class CORE_LD<RegisterClass RegClass, string Sz>
@@ -740,9 +746,12 @@ def : Pat<(BPFcall GPR:$dst), (JALX GPR:$dst)>;
 
 // Loads
 let Predicates = [BPFNoALU32] in {
-  def : Pat<(i64 (extloadi8  ADDRri:$src)), (i64 (LDB ADDRri:$src))>;
-  def : Pat<(i64 (extloadi16 ADDRri:$src)), (i64 (LDH ADDRri:$src))>;
-  def : Pat<(i64 (extloadi32 ADDRri:$src)), (i64 (LDW ADDRri:$src))>;
+  def : Pat<(i64 (extloadi8  (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (i64 (LDB ADDRri:$src, $aspace))>;
+  def : Pat<(i64 (extloadi16 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (i64 (LDH ADDRri:$src, $aspace))>;
+  def : Pat<(i64 (extloadi32 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (i64 (LDW ADDRri:$src, $aspace))>;
 }
 
 // Atomic XADD for BPFNoALU32
@@ -1060,20 +1069,22 @@ def : Pat<(i64 (anyext GPR32:$src)),
 class STORE32<BPFWidthModifer SizeOp, string OpcodeStr, list<dag> Pattern>
     : TYPE_LD_ST<BPF_MEM.Value, SizeOp.Value,
                  (outs),
-                 (ins GPR32:$src, MEMri:$addr),
+                 (ins GPR32:$src, MEMri:$addr, i64imm:$aspace),
                  "*("#OpcodeStr#" *)($addr) = $src",
                  Pattern> {
   bits<4> src;
   bits<20> addr;
+  bits<64> aspace;
 
   let Inst{51-48} = addr{19-16}; // base reg
   let Inst{55-52} = src;
   let Inst{47-32} = addr{15-0}; // offset
+  let Inst{31-0}  = aspace{31-0};
   let BPFClass = BPF_STX;
 }
 
 class STOREi32<BPFWidthModifer Opc, string OpcodeStr, PatFrag OpNode>
-    : STORE32<Opc, OpcodeStr, [(OpNode GPR32:$src, ADDRri:$addr)]>;
+    : STORE32<Opc, OpcodeStr, [(OpNode GPR32:$src, (ADDRri_as MEMri:$addr, i64imm:$aspace))]>;
 
 let Predicates = [BPFHasALU32], DecoderNamespace = "BPFALU32" in {
   def STW32 : STOREi32<BPF_W, "u32", store>;
@@ -1084,20 +1095,22 @@ let Predicates = [BPFHasALU32], DecoderNamespace = "BPFALU32" in {
 class LOAD32<BPFWidthModifer SizeOp, BPFModeModifer ModOp, string OpcodeStr, list<dag> Pattern>
     : TYPE_LD_ST<ModOp.Value, SizeOp.Value,
                 (outs GPR32:$dst),
-                (ins MEMri:$addr),
+                (ins MEMri:$addr, i64imm:$aspace),
                 "$dst = *("#OpcodeStr#" *)($addr)",
                 Pattern> {
   bits<4> dst;
   bits<20> addr;
+  bits<64> aspace;
 
   let Inst{51-48} = dst;
   let Inst{55-52} = addr{19-16};
   let Inst{47-32} = addr{15-0};
+  let Inst{31-0}  = aspace{31-0};
   let BPFClass = BPF_LDX;
 }
 
 class LOADi32<BPFWidthModifer SizeOp, BPFModeModifer ModOp, string OpcodeStr, PatFrag OpNode>
-    : LOAD32<SizeOp, ModOp, OpcodeStr, [(set i32:$dst, (OpNode ADDRri:$addr))]>;
+    : LOAD32<SizeOp, ModOp, OpcodeStr, [(set i32:$dst, (OpNode (ADDRri_as MEMri:$addr, i64imm:$aspace)))]>;
 
 let Predicates = [BPFHasALU32], DecoderNamespace = "BPFALU32" in {
   def LDW32 : LOADi32<BPF_W, BPF_MEM, "u32", load>;
@@ -1106,32 +1119,36 @@ let Predicates = [BPFHasALU32], DecoderNamespace = "BPFALU32" in {
 }
 
 let Predicates = [BPFHasALU32] in {
-  def : Pat<(truncstorei8 GPR:$src, ADDRri:$dst),
-            (STB32 (EXTRACT_SUBREG GPR:$src, sub_32), ADDRri:$dst)>;
-  def : Pat<(truncstorei16 GPR:$src, ADDRri:$dst),
-            (STH32 (EXTRACT_SUBREG GPR:$src, sub_32), ADDRri:$dst)>;
-  def : Pat<(truncstorei32 GPR:$src, ADDRri:$dst),
-            (STW32 (EXTRACT_SUBREG GPR:$src, sub_32), ADDRri:$dst)>;
-  def : Pat<(i32 (extloadi8 ADDRri:$src)), (i32 (LDB32 ADDRri:$src))>;
-  def : Pat<(i32 (extloadi16 ADDRri:$src)), (i32 (LDH32 ADDRri:$src))>;
+  def : Pat<(truncstorei8 GPR:$src, (ADDRri_as MEMri:$dst, i64imm:$aspace)),
+            (STB32 (EXTRACT_SUBREG GPR:$src, sub_32), MEMri:$dst, i64imm:$aspace)>;
+  def : Pat<(truncstorei16 GPR:$src, (ADDRri_as MEMri:$dst, i64imm:$aspace)),
+            (STH32 (EXTRACT_SUBREG GPR:$src, sub_32), MEMri:$dst, i64imm:$aspace)>;
+  def : Pat<(truncstorei32 GPR:$src, (ADDRri_as MEMri:$dst, i64imm:$aspace)),
+            (STW32 (EXTRACT_SUBREG GPR:$src, sub_32), MEMri:$dst, i64imm:$aspace)>;
+  def : Pat<(i32 (extloadi8 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (i32 (LDB32 MEMri:$src, i64imm:$aspace))>;
+  def : Pat<(i32 (extloadi16 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (i32 (LDH32 MEMri:$src, i64imm:$aspace))>;
 
   let Predicates = [BPFHasLdsx] in {
-    def : Pat<(i32 (sextloadi8 ADDRri:$src)), (EXTRACT_SUBREG (LDBSX ADDRri:$src), sub_32)>;
-    def : Pat<(i32 (sextloadi16 ADDRri:$src)), (EXTRACT_SUBREG (LDHSX ADDRri:$src), sub_32)>;
+    def : Pat<(i32 (sextloadi8 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+              (EXTRACT_SUBREG (LDBSX ADDRri:$src, i64imm:$aspace), sub_32)>;
+    def : Pat<(i32 (sextloadi16 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+              (EXTRACT_SUBREG (LDHSX ADDRri:$src, i64imm:$aspace), sub_32)>;
   }
 
-  def : Pat<(i64 (zextloadi8  ADDRri:$src)),
-            (SUBREG_TO_REG (i64 0), (LDB32 ADDRri:$src), sub_32)>;
-  def : Pat<(i64 (zextloadi16 ADDRri:$src)),
-            (SUBREG_TO_REG (i64 0), (LDH32 ADDRri:$src), sub_32)>;
-  def : Pat<(i64 (zextloadi32 ADDRri:$src)),
-            (SUBREG_TO_REG (i64 0), (LDW32 ADDRri:$src), sub_32)>;
-  def : Pat<(i64 (extloadi8  ADDRri:$src)),
-            (SUBREG_TO_REG (i64 0), (LDB32 ADDRri:$src), sub_32)>;
-  def : Pat<(i64 (extloadi16 ADDRri:$src)),
-            (SUBREG_TO_REG (i64 0), (LDH32 ADDRri:$src), sub_32)>;
-  def : Pat<(i64 (extloadi32 ADDRri:$src)),
-            (SUBREG_TO_REG (i64 0), (LDW32 ADDRri:$src), sub_32)>;
+  def : Pat<(i64 (zextloadi8 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (SUBREG_TO_REG (i64 0), (LDB32 MEMri:$src, i64imm:$aspace), sub_32)>;
+  def : Pat<(i64 (zextloadi16 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (SUBREG_TO_REG (i64 0), (LDH32 MEMri:$src, i64imm:$aspace), sub_32)>;
+  def : Pat<(i64 (zextloadi32 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (SUBREG_TO_REG (i64 0), (LDW32 MEMri:$src, i64imm:$aspace), sub_32)>;
+  def : Pat<(i64 (extloadi8 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (SUBREG_TO_REG (i64 0), (LDB32 MEMri:$src, i64imm:$aspace), sub_32)>;
+  def : Pat<(i64 (extloadi16 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (SUBREG_TO_REG (i64 0), (LDH32 MEMri:$src, i64imm:$aspace), sub_32)>;
+  def : Pat<(i64 (extloadi32 (ADDRri_as MEMri:$src, i64imm:$aspace))),
+            (SUBREG_TO_REG (i64 0), (LDW32 MEMri:$src, i64imm:$aspace), sub_32)>;
 }
 
 let usesCustomInserter = 1, isCodeGenOnly = 1 in {

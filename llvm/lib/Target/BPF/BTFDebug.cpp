@@ -1545,6 +1545,7 @@ bool BTFDebug::InstLower(const MachineInstr *MI, MCInst &OutMI) {
           OutMI.addOperand(MCOperand::createReg(MI->getOperand(0).getReg()));
         OutMI.addOperand(MCOperand::createReg(MI->getOperand(2).getReg()));
         OutMI.addOperand(MCOperand::createImm(Imm));
+        OutMI.addOperand(MCOperand::createImm(0)); // TODO: address space support for CO-RE?
         return true;
       }
     }

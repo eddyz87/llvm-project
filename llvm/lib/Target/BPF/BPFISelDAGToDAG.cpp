@@ -72,7 +72,9 @@ private:
   void Select(SDNode *N) override;
 
   // Complex Pattern for address selection.
-  bool SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset);
+  bool SelectAddr(SDNode *Parent, SDValue Addr, SDValue &Base, SDValue &Offset);
+  bool SelectAddrAS(SDNode *Parent, SDValue Addr, SDValue &Base, SDValue &Offset,
+                    SDValue &ASpace);
   bool SelectFIAddr(SDValue Addr, SDValue &Base, SDValue &Offset);
 
   // Node preprocessing cases
@@ -101,7 +103,13 @@ char BPFDAGToDAGISel::ID = 0;
 INITIALIZE_PASS(BPFDAGToDAGISel, DEBUG_TYPE, PASS_NAME, false, false)
 
 // ComplexPattern used on BPF Load/Store instructions
-bool BPFDAGToDAGISel::SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset) {
+bool BPFDAGToDAGISel::SelectAddr(SDNode *Parent, SDValue Addr, SDValue &Base,
+                                 SDValue &Offset) {
+  // Match only addresses in default address space
+  if (auto *MemNode = cast_or_null<MemSDNode>(Parent);
+      Parent && MemNode && MemNode->getAddressSpace() != 0)
+    return false;
+
   // if Address is FI, get the TargetFrameIndex.
   SDLoc DL(Addr);
   if (auto *FIN = dyn_cast<FrameIndexSDNode>(Addr)) {
@@ -131,6 +139,18 @@ bool BPFDAGToDAGISel::SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset) {
 
   Base = Addr;
   Offset = CurDAG->getTargetConstant(0, DL, MVT::i64);
+  return true;
+}
+
+bool BPFDAGToDAGISel::SelectAddrAS(SDNode *Parent, SDValue Op, SDValue &Base,
+                                   SDValue &Offset, SDValue &ASpace) {
+  SDLoc DL(Op);
+  MemSDNode *MemNode = cast_or_null<MemSDNode>(Parent);
+  if (!MemNode)
+    return false;
+  if (!SelectAddr(nullptr, Op, Base, Offset))
+    return false;
+  ASpace = CurDAG->getTargetConstant(MemNode->getAddressSpace(), DL, MVT::i64);
   return true;
 }
 
@@ -166,7 +186,7 @@ bool BPFDAGToDAGISel::SelectInlineAsmMemoryOperand(
   default:
     return true;
   case InlineAsm::ConstraintCode::m: // memory
-    if (!SelectAddr(Op, Op0, Op1))
+    if (!SelectAddr(nullptr, Op, Op0, Op1))
       return true;
     break;
   }
