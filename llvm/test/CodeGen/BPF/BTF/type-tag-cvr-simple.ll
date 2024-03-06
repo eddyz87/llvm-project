@@ -9,7 +9,7 @@
 ;   const volatile __tag1 int a;
 ;
 ; Compilation flag:
-;   clang -S -g -emit-llvm test.c -o test.ll
+;   clang -mllvm -btf-type-tag-v2 -S -g -emit-llvm test.c -o test.ll
 
 @a = dso_local constant i32 0, align 4, !dbg !0
 

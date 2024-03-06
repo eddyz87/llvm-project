@@ -395,7 +395,10 @@ class BTFDebug : public DebugHandlerBase {
   /// the base type of DTy. Return the type id of the first BTF type_tag
   /// in the chain. If no type_tag's are generated, a negative value
   /// is returned.
-  uint32_t genBTFTypeTags(const DIType *Ty, uint32_t BaseId);
+  uint32_t genBTFTypeTags(const DIType *Ty, int BaseId,
+                          const DIDerivedType *DTy, StringRef AnnotName);
+  uint32_t genBTFTypeTagsV1(const DIDerivedType *DTy);
+  uint32_t genBTFTypeTagsV2(const DIType *Ty, uint32_t BaseId);
 
   /// Generate one field relocation record.
   void generatePatchImmReloc(const MCSymbol *ORSym, uint32_t RootId,

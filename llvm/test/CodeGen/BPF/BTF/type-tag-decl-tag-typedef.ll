@@ -16,7 +16,7 @@
 ;   } g;
 ;
 ; Compilation flag:
-;   clang -S -g -emit-llvm test.c -o test.ll
+;   clang -mllvm -btf-type-tag-v2 -S -g -emit-llvm test.c -o test.ll
 
 ; Verify that for both 'foo' and 'bar' btf_decl_tag applies to 'typedef' ID.
 

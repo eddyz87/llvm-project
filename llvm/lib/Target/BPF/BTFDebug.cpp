@@ -532,7 +532,8 @@ static DINodeArray lookupAnnotations(const DIType *Ty) {
 }
 
 static void collectBTFTypeTags(const DIType *Ty,
-                               SmallVectorImpl<MDString *> &Tags) {
+                               SmallVectorImpl<MDString *> &Tags,
+                               StringRef AnnotName) {
   DINodeArray Annots = lookupAnnotations(Ty);
   if (!Annots)
     return;
@@ -544,7 +545,7 @@ static void collectBTFTypeTags(const DIType *Ty,
     const MDString *Name = dyn_cast<MDString>(MD->getOperand(0));
     if (!Name)
       continue;
-    if (!Name->getString().equals("btf:type_tag"))
+    if (!Name->getString().equals(AnnotName))
       continue;
     // For type with "int __tag1 __tag2 *p", the Tags will have
     // content: [__tag1, __tag2].
@@ -553,9 +554,11 @@ static void collectBTFTypeTags(const DIType *Ty,
 }
 
 /// Generate btf_type_tag chains.
-uint32_t BTFDebug::genBTFTypeTags(const DIType *Ty, uint32_t BaseId) {
+uint32_t BTFDebug::genBTFTypeTags(const DIType *Ty, int BaseId,
+                                  const DIDerivedType *DTy,
+                                  StringRef AnnotName) {
   SmallVector<MDString *, 4> MDStrs;
-  collectBTFTypeTags(Ty, MDStrs);
+  collectBTFTypeTags(Ty, MDStrs, AnnotName);
   // With MDStrs [__tag1, __tag2], the output type chain looks like
   //   PTR -> __tag2 -> __tag1 -> BaseType
   // In the below, we construct BTF types with the order of __tag1, __tag2
@@ -563,10 +566,20 @@ uint32_t BTFDebug::genBTFTypeTags(const DIType *Ty, uint32_t BaseId) {
   for (unsigned I = 0; I < MDStrs.size(); I++) {
     const MDString *Value = MDStrs[I];
     auto TagEntry =
-        std::make_unique<BTFTypeTypeTag>(BaseId, Value->getString());
+        BaseId == -1
+            ? std::make_unique<BTFTypeTypeTag>(DTy, Value->getString())
+            : std::make_unique<BTFTypeTypeTag>(BaseId, Value->getString());
     BaseId = addType(std::move(TagEntry));
   }
   return BaseId;
+}
+
+uint32_t BTFDebug::genBTFTypeTagsV1(const DIDerivedType *DTy) {
+  return genBTFTypeTags(DTy, -1, DTy, "btf_type_tag");
+}
+
+uint32_t BTFDebug::genBTFTypeTagsV2(const DIType *Ty, uint32_t BaseId) {
+  return genBTFTypeTags(Ty, BaseId, nullptr, "btf:type_tag");
 }
 
 static hash_code hashElements(const DICompositeType *Ty) {
@@ -772,7 +785,7 @@ uint32_t BTFDebug::addType(std::unique_ptr<BTFTypeBase> TypeEntry,
   auto Key = makeDedupKey(Ty);
   if (Key.has_value())
     DIDedupMap[*Key] = Id;
-  uint32_t TagId = genBTFTypeTags(Ty, Id);
+  uint32_t TagId = genBTFTypeTagsV2(Ty, Id);
   DIToIdMap[Ty] = TagId;
   if (RealId)
     *RealId = Id;
@@ -801,9 +814,7 @@ std::optional<uint32_t> BTFDebug::lookupType(const DIType *Ty) {
   if (!Key.has_value() || (DIDedupMap.find(*Key) == DIDedupMap.end()))
     return std::nullopt;
 
-  SmallVector<MDString *, 4> MDStrs;
-  collectBTFTypeTags(Ty, MDStrs);
-  auto TagId = genBTFTypeTags(Ty, DIDedupMap[*Key]);
+  auto TagId = genBTFTypeTagsV2(Ty, DIDedupMap[*Key]);
   DIToIdMap[Ty] = TagId;
   return TagId;
 }
@@ -1071,9 +1082,16 @@ void BTFDebug::visitDerivedType(const DIDerivedType *DTy, uint32_t &TypeId,
     }
   }
 
-  if (Tag == dwarf::DW_TAG_pointer_type || Tag == dwarf::DW_TAG_typedef ||
-      Tag == dwarf::DW_TAG_const_type || Tag == dwarf::DW_TAG_volatile_type ||
-      Tag == dwarf::DW_TAG_restrict_type) {
+  if (Tag == dwarf::DW_TAG_pointer_type) {
+    int TmpTypeId = genBTFTypeTagsV1(DTy);
+    auto TypeEntry = TmpTypeId == -1
+                         ? std::make_unique<BTFTypeDerived>(DTy, Tag, false)
+                         : std::make_unique<BTFTypeDerived>(
+                               TmpTypeId, BTF::BTF_KIND_PTR, DTy->getName());
+    TypeId = addType(std::move(TypeEntry), DTy);
+  } else if (Tag == dwarf::DW_TAG_typedef || Tag == dwarf::DW_TAG_const_type ||
+             Tag == dwarf::DW_TAG_volatile_type ||
+             Tag == dwarf::DW_TAG_restrict_type) {
     auto TypeEntry = std::make_unique<BTFTypeDerived>(DTy, Tag, false);
     uint32_t RealId = 0;
     TypeId = addType(std::move(TypeEntry), DTy, &RealId);
@@ -2073,8 +2091,14 @@ void BTFDebug::endModule() {
     }
 
     for (auto &TypeInfo : Fixup.second) {
+      const DIDerivedType *DTy = TypeInfo.first;
       BTFTypeDerived *BDType = TypeInfo.second;
-      BDType->setPointeeType(StructTypeId);
+
+      int TmpTypeId = genBTFTypeTagsV1(DTy);
+      if (TmpTypeId >= 0)
+        BDType->setPointeeType(TmpTypeId);
+      else
+        BDType->setPointeeType(StructTypeId);
     }
   }
 

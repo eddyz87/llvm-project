@@ -18,7 +18,7 @@
 ;   void root(struct bar *bar) {}
 ;
 ; Compilation flag:
-;   clang -S -g -emit-llvm test.c -o test.ll
+;   clang -mllvm -btf-type-tag-v2 -S -g -emit-llvm test.c -o test.ll
 
 ; CHECK:      [[[#]]] STRUCT 'bar' size=12 vlen=3
 ; CHECK-NEXT: 	'aa' type_id=[[#tag1:]] bits_offset=0
