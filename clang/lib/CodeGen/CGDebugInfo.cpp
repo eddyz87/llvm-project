@@ -56,6 +56,16 @@
 using namespace clang;
 using namespace clang::CodeGen;
 
+// Temporarily hide new format for btf_type_tags / DW_TAG_LLVM_annotation
+// behind an option to allow transitory period for tooling dependent on
+// this annotation. The goal is to remove this flag after transitory period.
+static llvm::cl::opt<bool> BTFTypeTagV2(
+    "btf-type-tag-v2", llvm::cl::Hidden,
+    llvm::cl::desc("For __attribute__((btf_type_tag(...))) generate "
+                   "DW_TAG_LLVM_annotation tags with DW_AT_name 'btf:type_tag' "
+                   "attached to annotated type itself"),
+    llvm::cl::init(false));
+
 static uint32_t getTypeAlignIfRequired(const Type *Ty, const ASTContext &Ctx) {
   auto TI = Ctx.getTypeInfo(Ty);
   return TI.isAlignRequired() ? TI.Align : 0;
@@ -1245,6 +1255,9 @@ llvm::DIType *CGDebugInfo::CreateType(const BTFTagAttributedType *Ty,
   auto WrappedTy = collectBTFTypeTagAnnotations(
       CGM.getLLVMContext(), DBuilder, Annotations, Ty, "btf:type_tag");
 
+  if (!BTFTypeTagV2 || Annotations.empty())
+    return getOrCreateType(WrappedTy, Unit);
+
   // After discussion with GCC BPF team in [1] it was decided to avoid
   // attaching BTF type tags to const/volatile/restrict DWARF DIEs.
   // So, strip qualifiers from WrappedTy and apply those to a final
@@ -1256,9 +1269,6 @@ llvm::DIType *CGDebugInfo::CreateType(const BTFTagAttributedType *Ty,
   WrappedTy.removeLocalFastQualifiers(Qualifiers::CVRMask);
 
   llvm::DIType *WrappedDI = getOrCreateType(WrappedTy, Unit);
-  if (Annotations.empty())
-    return WrappedDI;
-
   if (!WrappedDI)
     WrappedDI = DBuilder.createUnspecifiedType("void");
 
@@ -1321,8 +1331,8 @@ llvm::DIType *CGDebugInfo::CreatePointerLikeType(llvm::dwarf::Tag Tag,
           CGM.getTypes().getTargetAddressSpace(PointeeTy));
 
   llvm::DINodeArray Annotations = nullptr;
-  if (auto *BTFAttrTy =
-          dyn_cast<BTFTagAttributedType>(PointeeTy.getTypePtr())) {
+  auto *BTFAttrTy = dyn_cast<BTFTagAttributedType>(PointeeTy.getTypePtr());
+  if (!BTFTypeTagV2 && BTFAttrTy) {
     SmallVector<llvm::Metadata *, 4> AnnotationsVec;
     collectBTFTypeTagAnnotations(CGM.getLLVMContext(), DBuilder, AnnotationsVec,
                                  BTFAttrTy, "btf_type_tag");

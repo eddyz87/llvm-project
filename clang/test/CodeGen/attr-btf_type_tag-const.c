@@ -1,6 +1,6 @@
 // RUN: %clang_cc1 \
 // RUN:   -triple %itanium_abi_triple -debug-info-kind=limited \
-// RUN:   -S -emit-llvm -o - %s | FileCheck %s
+// RUN:   -mllvm -btf-type-tag-v2 -S -emit-llvm -o - %s | FileCheck %s
 
 // Check that BTF type tags are not attached to DW_TAG_const_type DIEs
 // in presence of "sugar" expressions that are transparent for
@@ -26,13 +26,11 @@ typeof(*foo) __tag1 bar;
 const int __tag2 *buz;
 
 // CHECK: distinct !DIGlobalVariable(name: "buz", {{.*}}, type: ![[L05:[0-9]+]], {{.*}})
-// CHECK: ![[L05]] = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: ![[L06:[0-9]+]], {{.*}}, annotations: ![[L07:[0-9]+]])
+// CHECK: ![[L05]] = !DIDerivedType(tag: DW_TAG_pointer_type, baseType: ![[L06:[0-9]+]], {{.*}})
 // CHECK: ![[L06]] = !DIDerivedType(tag: DW_TAG_const_type, baseType: ![[L08:[0-9]+]])
 // CHECK: ![[L08]] = !DIBasicType(name: "int", size: [[#]], {{.*}}, annotations: ![[L09:[0-9]+]])
 // CHECK: ![[L09]] = !{![[L10:[0-9]+]]}
 // CHECK: ![[L10]] = !{!"btf:type_tag", !"tag2"}
-// CHECK: ![[L07]] = !{![[L11:[0-9]+]]}
-// CHECK: ![[L11]] = !{!"btf_type_tag", !"tag2"}
 
 typeof(*buz) __tag3 quux;
 
