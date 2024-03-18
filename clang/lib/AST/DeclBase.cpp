@@ -1133,16 +1133,29 @@ const FunctionType *Decl::getFunctionType(bool BlocksToo) const {
   return Ty->getAs<FunctionType>();
 }
 
-bool Decl::isFunctionPointerType() const {
+static QualType getTypeSkipTypedef(const Decl *D) {
   QualType Ty;
-  if (const auto *D = dyn_cast<ValueDecl>(this))
-    Ty = D->getType();
-  else if (const auto *D = dyn_cast<TypedefNameDecl>(this))
-    Ty = D->getUnderlyingType();
-  else
+  if (const auto *VD = dyn_cast<ValueDecl>(D))
+    Ty = VD->getType();
+  else if (const auto *TD = dyn_cast<TypedefNameDecl>(D))
+    Ty = TD->getUnderlyingType();
+  return Ty;
+}
+
+bool Decl::isFunctionPointerType() const {
+  QualType Ty = getTypeSkipTypedef(this);
+  if (Ty.isNull())
     return false;
 
   return Ty.getCanonicalType()->isFunctionPointerType();
+}
+
+bool Decl::isPointerType() const {
+  QualType Ty = getTypeSkipTypedef(this);
+  if (Ty.isNull())
+    return false;
+
+  return Ty.getCanonicalType()->isPointerType();
 }
 
 DeclContext *Decl::getNonTransparentDeclContext() {

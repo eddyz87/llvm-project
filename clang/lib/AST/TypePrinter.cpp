@@ -326,6 +326,9 @@ void TypePrinter::printBefore(const Type *T,Qualifiers Quals, raw_ostream &OS) {
 
   SaveAndRestore PrevPHIsEmpty(HasEmptyPlaceHolder);
 
+  if ((int)Quals.getAddressSpace())
+    OS << "AS(" << (int)Quals.getAddressSpace() << ") ";
+
   // Print qualifiers as appropriate.
 
   bool CanPrefixQualifiers = false;

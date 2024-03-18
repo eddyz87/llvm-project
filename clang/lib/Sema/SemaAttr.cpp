@@ -922,12 +922,15 @@ attrMatcherRuleListToString(ArrayRef<attr::SubjectMatchRule> Rules) {
 void Sema::ActOnPragmaAttributeAttribute(
     ParsedAttr &Attribute, SourceLocation PragmaLoc,
     attr::ParsedSubjectMatchRuleSet Rules) {
+  llvm::dbgs() << "ActOnPragmaAttributeAttribute" << "\n";
   Attribute.setIsPragmaClangAttribute();
   SmallVector<attr::SubjectMatchRule, 4> SubjectMatchRules;
   // Gather the subject match rules that are supported by the attribute.
   SmallVector<std::pair<attr::SubjectMatchRule, bool>, 4>
       StrictSubjectMatchRuleSet;
   Attribute.getMatchRules(LangOpts, StrictSubjectMatchRuleSet);
+  llvm::dbgs() << "  StrictSubjectMatchRuleSet size "
+               << StrictSubjectMatchRuleSet.size() << "\n";
 
   // Figure out which subject matching rules are valid.
   if (StrictSubjectMatchRuleSet.empty()) {
@@ -1048,6 +1051,9 @@ void Sema::ActOnPragmaAttributeAttribute(
     return;
   }
 
+  llvm::dbgs() << "  pushing "
+               << SubjectMatchRules.size() << " matching rules\n";
+  llvm::dbgs() << "  is AS? " << (Attribute.getKind() == AttributeCommonInfo::AT_AddressSpace) << "\n";
   PragmaAttributeStack.back().Entries.push_back(
       {PragmaLoc, &Attribute, std::move(SubjectMatchRules), /*IsUsed=*/false});
 }
@@ -1097,6 +1103,7 @@ void Sema::ActOnPragmaAttributePop(SourceLocation PragmaLoc,
 void Sema::AddPragmaAttributes(Scope *S, Decl *D) {
   if (PragmaAttributeStack.empty())
     return;
+  llvm::dbgs() << "AddPragmaAttributes:";
   for (auto &Group : PragmaAttributeStack) {
     for (auto &Entry : Group.Entries) {
       ParsedAttr *Attribute = Entry.Attribute;
@@ -1112,6 +1119,9 @@ void Sema::AddPragmaAttributes(Scope *S, Decl *D) {
           break;
         }
       }
+      llvm::dbgs() << "  D: ";
+      D->dump();
+      llvm::dbgs() << "  rule applies? " << Applies << "\n";
       if (!Applies)
         continue;
       Entry.IsUsed = true;

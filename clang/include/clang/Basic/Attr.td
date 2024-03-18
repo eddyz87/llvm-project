@@ -177,6 +177,10 @@ def FunctionLike : SubsetSubject<DeclBase,
                                  [{S->getFunctionType(false) != nullptr}],
                                  "functions, function pointers">;
 
+def PointerType : SubsetSubject<DeclBase,
+                                [{S->isPointerType()}],
+                                "pointers">;
+
 // Function Pointer is a stricter version of FunctionLike that only allows function
 // pointers.
 def FunctionPointer : SubsetSubject<DeclBase,
@@ -526,7 +530,8 @@ def SubjectMatcherForFunction : AttrSubjectMatcherRule<"function", [Function], [
 ]>;
 // hasType is abstract, it should be used with one of the sub-rules.
 def SubjectMatcherForType : AttrSubjectMatcherRule<"hasType", [], [
-  AttrSubjectMatcherSubRule<"functionType", [FunctionLike]>
+  AttrSubjectMatcherSubRule<"functionType", [FunctionLike]>,
+  AttrSubjectMatcherSubRule<"pointerType", [PointerType]>
 
   // FIXME: There's a matcher ambiguity with objc methods and blocks since
   // functionType excludes them but functionProtoType includes them.
@@ -741,6 +746,8 @@ def AddressSpace : TypeAttr {
   let Spellings = [Clang<"address_space">];
   let Args = [IntArgument<"AddressSpace">];
   let Documentation = [Undocumented];
+  let Subjects = SubjectList<[PointerType]>;
+  let PragmaAttributeSupport = 1;
 }
 
 def Alias : Attr {

@@ -1271,6 +1271,9 @@ public:
   // Looks through the Decl's underlying type to determine if it's a
   // function pointer type.
   bool isFunctionPointerType() const;
+  // Looks through the Decl's underlying type to determine if it's a
+  // pointer type.
+  bool isPointerType() const;
 
 private:
   void setAttrsImpl(const AttrVec& Attrs, ASTContext &Ctx);

@@ -1865,6 +1865,22 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
         }
       }
     }
+
+    // TODO: add attrs from SlidingAttrs here
+    llvm::dbgs() << "ConvertDeclSpecToType: S.PragmaAttributeStack.size() = "
+                 << S.PragmaAttributeStack.size() << "\n";
+    for (auto &Group : S.PragmaAttributeStack) {
+      for (auto &Entry : Group.Entries) {
+        ParsedAttr *Attribute = Entry.Attribute;
+        llvm::dbgs() << "ConvertDeclSpecToType: stack attr is AS? "
+                     << (Attribute->getKind() == ParsedAttr::AT_AddressSpace)
+                     << "\n";
+        if (Attribute->getKind() == ParsedAttr::AT_AddressSpace)
+          SlidingAttrs.addAtEnd(Attribute);
+      }
+    }
+
+
     // During this call to processTypeAttrs(),
     // TypeProcessingState::getCurrentAttributes() will erroneously return a
     // reference to the DeclSpec attributes, rather than the declaration
@@ -1873,6 +1889,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     // to another. Declaration attributes are always C++11 attributes, and these
     // are never distributed.
     processTypeAttrs(state, Result, TAL_DeclSpec, SlidingAttrs);
+    llvm::dbgs() << "ConvertDeclSpecToType: processing " << DS.getAttributes().size() << " attrs\n";
     processTypeAttrs(state, Result, TAL_DeclSpec, DS.getAttributes());
   }
 
@@ -8844,6 +8861,8 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
   state.setParsedNoDeref(false);
   if (attrs.empty())
     return;
+  llvm::dbgs() << "processTypeAttrs():\n";
+  // << DS.getAttributes().size() << " attrs\n";
 
   // Scan through and apply attributes to this type where it makes sense.  Some
   // attributes (such as __address_space__, __vector_size__, etc) apply to the
@@ -8936,6 +8955,7 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
     case ParsedAttr::AT_OpenCLGenericAddressSpace:
     case ParsedAttr::AT_HLSLGroupSharedAddressSpace:
     case ParsedAttr::AT_AddressSpace:
+      llvm::dbgs() << "  AT_AddressSpace\n";
       HandleAddressSpaceTypeAttribute(type, attr, state);
       attr.setUsedAsTypeAttr();
       break;

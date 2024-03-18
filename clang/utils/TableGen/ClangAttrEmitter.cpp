@@ -24,6 +24,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TableGen/Error.h"
@@ -1862,6 +1863,11 @@ struct AttributeSubjectMatchRule {
   AttributeSubjectMatchRule(const Record *MetaSubject, const Record *Constraint)
       : MetaSubject(MetaSubject), Constraint(Constraint) {
     assert(MetaSubject && "Missing subject");
+    llvm::dbgs() << "AttributeSubjectMatchRule:\n";
+    llvm::dbgs() << "-> MetaSubject:\n" << *MetaSubject;
+    if (Constraint)
+      llvm::dbgs() << "-> Constraint:\n" << *Constraint;
+    llvm::dbgs() << "\n";
   }
 
   bool isSubRule() const { return Constraint != nullptr; }
