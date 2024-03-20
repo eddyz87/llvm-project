@@ -177,10 +177,6 @@ def FunctionLike : SubsetSubject<DeclBase,
                                  [{S->getFunctionType(false) != nullptr}],
                                  "functions, function pointers">;
 
-def PointerType : SubsetSubject<DeclBase,
-                                [{S->isPointerType()}],
-                                "pointers">;
-
 // Function Pointer is a stricter version of FunctionLike that only allows function
 // pointers.
 def FunctionPointer : SubsetSubject<DeclBase,
@@ -519,6 +515,7 @@ class AttrSubjectMatcherRule<string name, list<AttrSubject> subjects,
   // Lists language options, one of which is required to be true for the
   // attribute to be applicable. If empty, no language options are required.
   list<LangOpt> LangOpts = [];
+  bit TypeRule = 0;
 }
 
 // function(is_member)
@@ -530,9 +527,7 @@ def SubjectMatcherForFunction : AttrSubjectMatcherRule<"function", [Function], [
 ]>;
 // hasType is abstract, it should be used with one of the sub-rules.
 def SubjectMatcherForType : AttrSubjectMatcherRule<"hasType", [], [
-  AttrSubjectMatcherSubRule<"functionType", [FunctionLike]>,
-  AttrSubjectMatcherSubRule<"pointerType", [PointerType]>
-
+  AttrSubjectMatcherSubRule<"functionType", [FunctionLike]>
   // FIXME: There's a matcher ambiguity with objc methods and blocks since
   // functionType excludes them but functionProtoType includes them.
   // AttrSubjectMatcherSubRule<"functionProtoType", [HasFunctionProto]>
@@ -599,6 +594,16 @@ class AttrSubjectMatcherAggregateRule<AttrSubject subject> {
 }
 
 def SubjectMatcherForNamed : AttrSubjectMatcherAggregateRule<Named>;
+
+def QualTypeSubject : AttrSubject;
+
+def PointerType : SubsetSubject<QualTypeSubject,
+                                [{!T.isNull() && T->isPointerType()}],
+                                "pointers">;
+
+def SubjectMatcherForPointerTypes : AttrSubjectMatcherRule<"pointers", [PointerType], []> {
+   let TypeRule = 1;
+}
 
 class Attr {
   // Specifies that when printed, this attribute is meaningful on the

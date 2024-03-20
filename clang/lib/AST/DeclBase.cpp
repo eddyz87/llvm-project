@@ -1150,14 +1150,6 @@ bool Decl::isFunctionPointerType() const {
   return Ty.getCanonicalType()->isFunctionPointerType();
 }
 
-bool Decl::isPointerType() const {
-  QualType Ty = getTypeSkipTypedef(this);
-  if (Ty.isNull())
-    return false;
-
-  return Ty.getCanonicalType()->isPointerType();
-}
-
 DeclContext *Decl::getNonTransparentDeclContext() {
   assert(getDeclContext());
   return getDeclContext()->getNonTransparentContext();

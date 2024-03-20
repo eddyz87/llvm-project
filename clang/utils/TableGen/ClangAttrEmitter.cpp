@@ -1859,15 +1859,13 @@ namespace {
 struct AttributeSubjectMatchRule {
   const Record *MetaSubject;
   const Record *Constraint;
+  const bool IsTypeRule;
 
-  AttributeSubjectMatchRule(const Record *MetaSubject, const Record *Constraint)
-      : MetaSubject(MetaSubject), Constraint(Constraint) {
+  AttributeSubjectMatchRule(const Record *MetaSubject, const Record *Constraint,
+                            bool IsTypeRule)
+      : MetaSubject(MetaSubject), Constraint(Constraint),
+        IsTypeRule(IsTypeRule) {
     assert(MetaSubject && "Missing subject");
-    llvm::dbgs() << "AttributeSubjectMatchRule:\n";
-    llvm::dbgs() << "-> MetaSubject:\n" << *MetaSubject;
-    if (Constraint)
-      llvm::dbgs() << "-> Constraint:\n" << *Constraint;
-    llvm::dbgs() << "\n";
   }
 
   bool isSubRule() const { return Constraint != nullptr; }
@@ -1932,6 +1930,8 @@ struct AttributeSubjectMatchRule {
   std::string getEnumValue() const { return "attr::" + getEnumValueName(); }
 
   static const char *EnumName;
+
+  bool isTypeRule() const { return IsTypeRule; }
 };
 
 const char *AttributeSubjectMatchRule::EnumName = "attr::SubjectMatchRule";
@@ -1988,7 +1988,7 @@ static bool isSupportedPragmaClangAttributeSubject(const Record &Subject) {
   // declaration node. However, it may be reasonable for support for statement
   // attributes to be added.
   if (Subject.isSubClassOf("DeclNode") || Subject.isSubClassOf("DeclBase") ||
-      Subject.getName() == "DeclBase")
+      Subject.getName() == "DeclBase" || Subject.getName() == "QualTypeSubject")
     return true;
 
   if (Subject.isSubClassOf("SubsetSubject"))
@@ -2013,8 +2013,9 @@ PragmaClangAttributeSupport::PragmaClangAttributeSupport(
       Records.getAllDerivedDefinitions("AttrSubjectMatcherRule");
   auto MapFromSubjectsToRules = [this](const Record *SubjectContainer,
                                        const Record *MetaSubject,
-                                       const Record *Constraint) {
-    Rules.emplace_back(MetaSubject, Constraint);
+                                       const Record *Constraint,
+                                       bool IsTypeRule) {
+    Rules.emplace_back(MetaSubject, Constraint, IsTypeRule);
     std::vector<Record *> ApplicableSubjects =
         SubjectContainer->getValueAsListOfDefs("Subjects");
     for (const auto *Subject : ApplicableSubjects) {
@@ -2022,7 +2023,8 @@ PragmaClangAttributeSupport::PragmaClangAttributeSupport(
           SubjectsToRules
               .try_emplace(Subject, RuleOrAggregateRuleSet::getRule(
                                         AttributeSubjectMatchRule(MetaSubject,
-                                                                  Constraint)))
+                                                                  Constraint,
+                                                                  IsTypeRule)))
               .second;
       if (!Inserted) {
         PrintFatalError("Attribute subject match rules should not represent"
@@ -2031,11 +2033,12 @@ PragmaClangAttributeSupport::PragmaClangAttributeSupport(
     }
   };
   for (const auto *MetaSubject : MetaSubjects) {
-    MapFromSubjectsToRules(MetaSubject, MetaSubject, /*Constraints=*/nullptr);
+    bool IsTypeRule = MetaSubject->getValueAsBit("TypeRule");
+    MapFromSubjectsToRules(MetaSubject, MetaSubject, /*Constraints=*/nullptr, IsTypeRule);
     std::vector<Record *> Constraints =
         MetaSubject->getValueAsListOfDefs("Constraints");
     for (const auto *Constraint : Constraints)
-      MapFromSubjectsToRules(Constraint, MetaSubject, Constraint);
+      MapFromSubjectsToRules(Constraint, MetaSubject, Constraint, IsTypeRule);
   }
 
   std::vector<Record *> Aggregates =
@@ -2089,7 +2092,7 @@ void PragmaClangAttributeSupport::emitMatchRuleList(raw_ostream &OS) {
        << Rule.isAbstractRule();
     if (Rule.isSubRule())
       OS << ", "
-         << AttributeSubjectMatchRule(Rule.MetaSubject, nullptr).getEnumValue()
+         << AttributeSubjectMatchRule(Rule.MetaSubject, nullptr, false).getEnumValue()
          << ", " << Rule.isNegatedSubRule();
     OS << ")\n";
   }
@@ -2162,8 +2165,11 @@ static std::string GenerateTestExpression(ArrayRef<Record *> LangOpts) {
 void
 PragmaClangAttributeSupport::generateStrictConformsTo(const Record &Attr,
                                                       raw_ostream &OS) {
+  bool D = Attr.getName() == "AddressSpace";
+  if (D) llvm::dbgs() << "1\n";
   if (!isAttributedSupported(Attr) || Attr.isValueUnset("Subjects"))
     return;
+  if (D) llvm::dbgs() << "2\n";
   // Generate a function that constructs a set of matching rules that describe
   // to which declarations the attribute should apply to.
   OS << "void getPragmaAttributeMatchRules("
@@ -2173,12 +2179,15 @@ PragmaClangAttributeSupport::generateStrictConformsTo(const Record &Attr,
   const Record *SubjectObj = Attr.getValueAsDef("Subjects");
   std::vector<Record *> Subjects = SubjectObj->getValueAsListOfDefs("Subjects");
   for (const auto *Subject : Subjects) {
+    if (D) llvm::dbgs() << "3\n";
     if (!isSupportedPragmaClangAttributeSubject(*Subject))
       continue;
+    if (D) llvm::dbgs() << "4\n";
     auto It = SubjectsToRules.find(Subject);
     assert(It != SubjectsToRules.end() &&
            "This attribute is unsupported by #pragma clang attribute");
     for (const auto &Rule : It->getSecond().getAggregateRuleSet()) {
+      if (D) llvm::dbgs() << "5\n";
       // The rule might be language specific, so only subtract it from the given
       // rules if the specific language options are specified.
       std::vector<Record *> LangOpts = Rule.getLangOpts();
@@ -2260,7 +2269,7 @@ void PragmaClangAttributeSupport::generateParsingHelpers(raw_ostream &OS) {
   OS << "  switch (Rule) {\n";
   for (const auto &SubMatchRule : SubMatchRules) {
     OS << "  case "
-       << AttributeSubjectMatchRule(SubMatchRule.first, nullptr).getEnumValue()
+       << AttributeSubjectMatchRule(SubMatchRule.first, nullptr, false).getEnumValue()
        << ":\n";
     OS << "  return \"'";
     bool IsFirst = true;
@@ -4065,6 +4074,11 @@ static void GenerateAppertainsTo(const Record &Attr, raw_ostream &OS) {
   const Record *SubjectObj = Attr.getValueAsDef("Subjects");
   std::vector<Record *> Subjects = SubjectObj->getValueAsListOfDefs("Subjects");
 
+  Subjects.erase(std::remove_if(Subjects.begin(), Subjects.end(), [=](Record *Subject) {
+    return !Subject->isValueUnset("Base") &&
+           Subject->getValueAsDef("Base")->getName() == "QualTypeSubject";
+  }), Subjects.end());
+
   // If the list of subjects is empty, it is assumed that the attribute
   // appertains to everything.
   if (Subjects.empty())
@@ -4311,6 +4325,8 @@ emitAttributeMatchRules(PragmaClangAttributeSupport &PragmaAttributeSupport,
      << AttributeSubjectMatchRule::EnumName << " rule) {\n";
   OS << "  switch (rule) {\n";
   for (const auto &Rule : PragmaAttributeSupport.Rules) {
+    if (Rule.isTypeRule())
+      continue;
     if (Rule.isAbstractRule()) {
       OS << "  case " << Rule.getEnumValue() << ":\n";
       OS << "    assert(false && \"Abstract matcher rule isn't allowed\");\n";
@@ -4333,6 +4349,41 @@ emitAttributeMatchRules(PragmaClangAttributeSupport &PragmaAttributeSupport,
       if (I + 1 != E)
         OS << " || ";
     }
+    OS << ";\n";
+  }
+  OS << "  }\n";
+  OS << "  llvm_unreachable(\"Invalid match rule\");\nreturn false;\n";
+  OS << "}\n\n";
+}
+
+static void
+emitTypeAttributeMatchRules(PragmaClangAttributeSupport &PragmaAttributeSupport,
+                            raw_ostream &OS) {
+  OS << "static bool checkAttributeMatchRuleAppliesTo(const QualType &T, "
+     << AttributeSubjectMatchRule::EnumName << " rule) {\n";
+  OS << "  switch (rule) {\n";
+  for (const auto &Rule : PragmaAttributeSupport.Rules) {
+    if (!Rule.isTypeRule())
+      continue;
+    std::vector<Record *> Subjects = Rule.getSubjects();
+    assert(!Subjects.empty() && "Missing subjects");
+    OS << "  case " << Rule.getEnumValue() << ":\n";
+    OS << "    return ";
+    bool First = true;
+    for (auto I = Subjects.begin(), E = Subjects.end(); I != E; ++I) {
+      assert((*I)->isSubClassOf("SubsetSubject") &&
+             "Only SubsetSubject subjects are supported for type rules");
+      // If the subject has custom code associated with it, use the function
+      // that was generated for GenerateAppertainsTo to check if the declaration
+      // is valid.
+      OS << functionNameForCustomAppertainsTo(**I) << "(T)";
+      if (First)
+        First = false;
+      else
+        OS << " || ";
+    }
+    if (First)
+      OS << "false";
     OS << ";\n";
   }
   OS << "  }\n";
@@ -4676,6 +4727,7 @@ void EmitClangAttrParsedAttrImpl(RecordKeeper &Records, raw_ostream &OS) {
 
   // Generate the attribute match rules.
   emitAttributeMatchRules(PragmaAttributeSupport, OS);
+  emitTypeAttributeMatchRules(PragmaAttributeSupport, OS);
 
   OS << "#elif defined(WANT_DECL_MERGE_LOGIC)\n\n";
 
