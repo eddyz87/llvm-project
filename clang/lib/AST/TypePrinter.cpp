@@ -1114,6 +1114,9 @@ void TypePrinter::printFunctionAfter(const FunctionType::ExtInfo &Info,
     case CC_RISCVVectorCall:
       OS << "__attribute__((riscv_vector_cc))";
       break;
+    case CC_BPFFastCall:
+      OS << "__attribute__((bpf_fastcall))";
+      break;
     }
   }
 
@@ -2022,6 +2025,9 @@ void TypePrinter::printAttributedAfter(const AttributedType *T,
     break;
   case attr::ArmMveStrictPolymorphism:
     OS << "__clang_arm_mve_strict_polymorphism";
+    break;
+  case attr::BPFFastCall:
+    OS << "bpf_fast_call";
     break;
 
   // Nothing to print for this attribute.
