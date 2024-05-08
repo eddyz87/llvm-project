@@ -1554,6 +1554,9 @@ static unsigned getDwarfCC(CallingConv CC) {
     return llvm::dwarf::DW_CC_LLVM_PreserveNone;
   case CC_RISCVVectorCall:
     return llvm::dwarf::DW_CC_LLVM_RISCVVectorCall;
+  case CC_BPFFastCall:
+    // Don't record this in DWARF for now
+    return 0;
   }
   return 0;
 }

@@ -369,6 +369,9 @@ static void PrintCallingConv(unsigned cc, raw_ostream &Out) {
   case CallingConv::RISCV_VectorCall:
     Out << "riscv_vector_cc";
     break;
+  case CallingConv::BPFFastCall:
+    Out << "bpf_fastcall";
+    break;
   }
 }
 

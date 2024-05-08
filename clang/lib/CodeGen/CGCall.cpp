@@ -77,6 +77,7 @@ unsigned CodeGenTypes::ClangCallConvToLLVMCallConv(CallingConv CC) {
     // clang-format off
   case CC_RISCVVectorCall: return llvm::CallingConv::RISCV_VectorCall;
     // clang-format on
+  case CC_BPFFastCall: return llvm::CallingConv::BPFFastCall;
   }
 }
 
@@ -265,6 +266,9 @@ static CallingConv getCallingConventionForDecl(const ObjCMethodDecl *D,
 
   if (D->hasAttr<RISCVVectorCCAttr>())
     return CC_RISCVVectorCall;
+
+  if (D->hasAttr<BPFFastCallAttr>())
+    return CC_BPFFastCall;
 
   return CC_C;
 }

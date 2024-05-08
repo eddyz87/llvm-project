@@ -3510,6 +3510,7 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
     // clang-format off
   case CC_RISCVVectorCall: return "riscv_vector_cc";
     // clang-format on
+  case CC_BPFFastCall: return "bpf_fastcall";
   }
 
   llvm_unreachable("Invalid calling convention.");
@@ -4162,6 +4163,7 @@ bool AttributedType::isCallingConv() const {
   case attr::M68kRTD:
   case attr::PreserveNone:
   case attr::RISCVVectorCC:
+  case attr::BPFFastCall:
     return true;
   }
   llvm_unreachable("invalid attr kind");
