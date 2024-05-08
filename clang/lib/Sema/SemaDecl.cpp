@@ -3779,6 +3779,19 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, NamedDecl *&OldD, Scope *S,
     RequiresAdjustment = true;
   }
 
+  if (OldTypeInfo.getBPFFastCall() !=
+      NewTypeInfo.getBPFFastCall()) {
+    if (NewTypeInfo.getBPFFastCall()) {
+      BPFFastCallAttr *Attr = New->getAttr<BPFFastCallAttr>();
+      Diag(New->getLocation(), diag::err_function_attribute_mismatch) << Attr;
+      Diag(OldLocation, diag::note_previous_declaration);
+      return true;
+    }
+
+    NewTypeInfo = NewTypeInfo.withBPFFastCall(true);
+    RequiresAdjustment = true;
+  }
+
   if (RequiresAdjustment) {
     const FunctionType *AdjustedType = New->getType()->getAs<FunctionType>();
     AdjustedType = Context.adjustFunctionType(AdjustedType, NewTypeInfo);

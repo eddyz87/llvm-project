@@ -1130,6 +1130,8 @@ void TypePrinter::printFunctionAfter(const FunctionType::ExtInfo &Info,
     OS << " __attribute__((no_caller_saved_registers))";
   if (Info.getNoCfCheck())
     OS << " __attribute__((nocf_check))";
+  if (Info.getBPFFastCall())
+    OS << " __attribute__((bpf_fastcall))";
 }
 
 void TypePrinter::printFunctionNoProtoBefore(const FunctionNoProtoType *T,

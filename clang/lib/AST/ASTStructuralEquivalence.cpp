@@ -765,6 +765,8 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     return false;
   if (EI1.getNoCfCheck() != EI2.getNoCfCheck())
     return false;
+  if (EI1.getBPFFastCall() != EI2.getBPFFastCall())
+    return false;
 
   return true;
 }

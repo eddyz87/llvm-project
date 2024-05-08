@@ -24,10 +24,12 @@ struct StructuralEquivalenceTest : ::testing::Test {
   // Parses the source code in the specified language and sets the ASTs of
   // the current test instance to the parse result.
   void makeASTUnits(const std::string &SrcCode0, const std::string &SrcCode1,
-                    TestLanguage Lang) {
+                    TestLanguage Lang, std::optional<std::string> Target = {}) {
     this->Code0 = SrcCode0;
     this->Code1 = SrcCode1;
     std::vector<std::string> Args = getCommandLineArgsForTesting(Lang);
+    if (Target)
+      Args.push_back(std::string("--target=") + *Target);
 
     const char *const InputFileName = "input.cc";
 
@@ -42,8 +44,9 @@ struct StructuralEquivalenceTest : ::testing::Test {
   std::tuple<NodeType *, NodeType *>
   makeDecls(const std::string &SrcCode0, const std::string &SrcCode1,
             TestLanguage Lang, const MatcherType &Matcher0,
-            const MatcherType &Matcher1) {
-    makeASTUnits(SrcCode0, SrcCode1, Lang);
+            const MatcherType &Matcher1,
+            std::optional<std::string> Target = {}) {
+    makeASTUnits(SrcCode0, SrcCode1, Lang, Target);
 
     NodeType *D0 = FirstDeclMatcher<NodeType>().match(
         AST0->getASTContext().getTranslationUnitDecl(), Matcher0);
@@ -100,7 +103,7 @@ struct StructuralEquivalenceTest : ::testing::Test {
   makeStmts(const std::string &SrcCode0, const std::string &SrcCode1,
             TestLanguage Lang, const MatcherType &Matcher0,
             const MatcherType &Matcher1) {
-    makeASTUnits(SrcCode0, SrcCode1, Lang);
+    makeASTUnits(SrcCode0, SrcCode1, Lang, {});
 
     Stmt *S0 = FirstDeclMatcher<Stmt>().match(
         AST0->getASTContext().getTranslationUnitDecl(), Matcher0);
@@ -482,6 +485,19 @@ TEST_F(StructuralEquivalenceFunctionTest, FunctionsWithDifferentSavedRegsAttr) {
       "__attribute__((no_caller_saved_registers)) void foo();",
       "                                           void foo();", Lang_C99);
   EXPECT_FALSE(testStructuralMatch(t));
+}
+
+TEST_F(StructuralEquivalenceFunctionTest, FunctionsWithDifferentBPFFastCall) {
+#ifdef LLVM_HAS_BPF_TARGET
+  auto Matcher = namedDecl(hasName("foo"));
+  auto t = makeDecls<NamedDecl>("__attribute__((bpf_fastcall)) void foo();",
+                                "                              void foo();",
+                                Lang_C99, Matcher, Matcher, "bpf");
+  EXPECT_FALSE(testStructuralMatch(t));
+#else // LLVM_HAS_BPF_TARGET
+  GTEST_SKIP();
+  return;
+#endif // LLVM_HAS_BPF_TARGET
 }
 
 struct StructuralEquivalenceCXXMethodTest : StructuralEquivalenceTest {

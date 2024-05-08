@@ -605,6 +605,10 @@ class CGFunctionInfo final
   LLVM_PREFERRED_TYPE(bool)
   unsigned NoCfCheck : 1;
 
+  /// Whether this function has bpf_fastcall attribute.
+  LLVM_PREFERRED_TYPE(bool)
+  unsigned BPFFastCall : 1;
+
   /// Log 2 of the maximum vector width.
   unsigned MaxVectorWidth : 4;
 
@@ -696,6 +700,8 @@ public:
   /// Whether this function has nocf_check attribute.
   bool isNoCfCheck() const { return NoCfCheck; }
 
+  bool isBPFFastCall() const { return BPFFastCall; }
+
   /// getASTCallingConvention() - Return the AST-specified calling
   /// convention.
   CallingConv getASTCallingConvention() const {
@@ -722,7 +728,7 @@ public:
     return FunctionType::ExtInfo(isNoReturn(), getHasRegParm(), getRegParm(),
                                  getASTCallingConvention(), isReturnsRetained(),
                                  isNoCallerSavedRegs(), isNoCfCheck(),
-                                 isCmseNSCall());
+                                 isCmseNSCall(), isBPFFastCall());
   }
 
   CanQualType getReturnType() const { return getArgsBuffer()[0].type; }
@@ -776,6 +782,7 @@ public:
     ID.AddInteger(RegParm);
     ID.AddBoolean(NoCfCheck);
     ID.AddBoolean(CmseNSCall);
+    ID.AddBoolean(BPFFastCall);
     ID.AddInteger(Required.getOpaqueData());
     ID.AddBoolean(HasExtParameterInfos);
     if (HasExtParameterInfos) {
@@ -803,6 +810,7 @@ public:
     ID.AddInteger(info.getRegParm());
     ID.AddBoolean(info.getNoCfCheck());
     ID.AddBoolean(info.getCmseNSCall());
+    ID.AddBoolean(info.getBPFFastCall());
     ID.AddInteger(required.getOpaqueData());
     ID.AddBoolean(!paramInfos.empty());
     if (!paramInfos.empty()) {

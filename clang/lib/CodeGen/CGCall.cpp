@@ -853,6 +853,7 @@ CGFunctionInfo *CGFunctionInfo::create(unsigned llvmCC, bool instanceMethod,
   FI->ReturnsRetained = info.getProducesResult();
   FI->NoCallerSavedRegs = info.getNoCallerSavedRegs();
   FI->NoCfCheck = info.getNoCfCheck();
+  FI->BPFFastCall = info.getBPFFastCall();
   FI->Required = required;
   FI->HasRegParm = info.getHasRegParm();
   FI->RegParm = info.getRegParm();
@@ -2447,6 +2448,8 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
       FuncAttrs.addAttribute(llvm::Attribute::NoCfCheck);
     if (TargetDecl->hasAttr<LeafAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::NoCallback);
+    if (TargetDecl->hasAttr<BPFFastCallAttr>())
+      FuncAttrs.addAttribute("bpf_fastcall");
 
     HasOptnone = TargetDecl->hasAttr<OptimizeNoneAttr>();
     if (auto *AllocSize = TargetDecl->getAttr<AllocSizeAttr>()) {

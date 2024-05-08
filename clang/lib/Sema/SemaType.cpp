@@ -164,6 +164,7 @@ static void diagnoseBadTypeAttribute(Sema &S, const ParsedAttr &attr,
   case ParsedAttr::AT_ArmInOut:                                                \
   case ParsedAttr::AT_AnyX86NoCallerSavedRegisters:                            \
   case ParsedAttr::AT_AnyX86NoCfCheck:                                         \
+  case ParsedAttr::AT_BPFFastCall:                                             \
     CALLING_CONV_ATTRS_CASELIST
 
 // Microsoft-specific type qualifiers.
@@ -7733,6 +7734,20 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state, ParsedAttr &attr,
 
     FunctionType::ExtInfo EI =
         unwrapped.get()->getExtInfo().withNoCallerSavedRegs(true);
+    type = unwrapped.wrap(S, S.Context.adjustFunctionType(unwrapped.get(), EI));
+    return true;
+  }
+
+  if (attr.getKind() == ParsedAttr::AT_BPFFastCall) {
+    if (S.CheckAttrTarget(attr) || S.CheckAttrNoArgs(attr))
+      return true;
+
+    // Delay if this is not a function type.
+    if (!unwrapped.isFunctionType())
+      return false;
+
+    FunctionType::ExtInfo EI =
+        unwrapped.get()->getExtInfo().withBPFFastCall(true);
     type = unwrapped.wrap(S, S.Context.adjustFunctionType(unwrapped.get(), EI));
     return true;
   }
