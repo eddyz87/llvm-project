@@ -3487,8 +3487,10 @@ def AnyX86Interrupt : InheritableAttr, TargetSpecificAttr<TargetAnyX86> {
   let Documentation = [AnyX86InterruptDocs];
 }
 
-def AnyX86NoCallerSavedRegisters : InheritableAttr,
-                                   TargetSpecificAttr<TargetAnyX86> {
+def AnyX86NoCallerSavedRegisters
+    : InheritableAttr,
+      // TODO: concat TargetBPF.arches and TargetAnyX86.arches
+      TargetSpecificAttr<TargetArch<["x86", "x86_64", "bpfel", "bpfeb"]>> {
   let Spellings = [GCC<"no_caller_saved_registers">];
   let Documentation = [AnyX86NoCallerSavedRegistersDocs];
   let SimpleHandler = 1;

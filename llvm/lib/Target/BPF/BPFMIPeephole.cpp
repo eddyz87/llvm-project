@@ -24,9 +24,11 @@
 #include "BPFInstrInfo.h"
 #include "BPFTargetMachine.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/Support/Debug.h"
 #include <set>
 
@@ -319,6 +321,7 @@ private:
   bool in16BitRange(int Num);
   bool eliminateRedundantMov();
   bool adjustBranch();
+  bool insertMissingCallerSavedSpills();
 
 public:
 
@@ -333,6 +336,7 @@ public:
     Changed = eliminateRedundantMov();
     if (SupportGotol)
       Changed = adjustBranch() || Changed;
+    Changed |= insertMissingCallerSavedSpills();
     return Changed;
   }
 };
@@ -593,6 +597,93 @@ bool BPFMIPreEmitPeephole::adjustBranch() {
     }
   }
 
+  return Changed;
+}
+
+static const unsigned CSRRegs[] =
+  {BPF::R0, BPF::R1, BPF::R2, BPF::R3, BPF::R4, BPF::R5};
+
+struct NoCSRCall {
+  MachineInstr *MI;
+  unsigned LiveCSRMask;
+};
+
+static void collectNoCSRCalls(const TargetRegisterInfo *TRI,
+                              LivePhysRegs &LiveRegs,
+                              MachineBasicBlock &BB,
+                              SmallVectorImpl<NoCSRCall> &Calls) {
+    LiveRegs.init(*TRI);
+    LiveRegs.addLiveOuts(BB);
+    Calls.clear();
+    // llvm::dbgs() << "collectNoCSRCalls:\n";
+    for (MachineInstr &MI: llvm::reverse(BB)) {
+      unsigned LiveCSRMask;
+      if (!MI.isCall())
+        goto NextInsn;
+      LiveCSRMask = 0;
+      // llvm::dbgs() << "  " << MI;
+      for (MCRegister R: CSRRegs) {
+        bool DoSpillFill = !MI.definesRegister(R, TRI) && LiveRegs.contains(R);
+        // llvm::dbgs() << "  R" << (R - BPF::R0) << ":";
+        // llvm::dbgs() << " defined? " << MI.definesRegister(R, TRI) << ", ";
+        // llvm::dbgs() << " live? " << LiveRegs.contains(R) << "\n";
+        if (!DoSpillFill)
+          continue;
+        // llvm::dbgs() << "  preserving R" << (R - BPF::R0) << "\n";
+        LiveCSRMask |= 1 << R;
+      }
+      if (LiveCSRMask)
+        Calls.push_back({&MI, LiveCSRMask});
+    NextInsn:
+      LiveRegs.stepBackward(MI);
+    }
+}
+
+static int64_t computeMinFixedObjOffset(MachineFrameInfo &MFI, unsigned SlotSize) {
+  int64_t MinFixedObjOffset = 0;
+  // Same logic as in X86FrameLowering::adjustFrameForMsvcCxxEh()
+  for (int I = MFI.getObjectIndexBegin(); I < MFI.getObjectIndexEnd(); ++I) {
+    if (MFI.isDeadObjectIndex(I))
+      continue;
+    MinFixedObjOffset = std::min(MinFixedObjOffset, MFI.getObjectOffset(I));
+  }
+  MinFixedObjOffset -= (SlotSize + MinFixedObjOffset % SlotSize) & (SlotSize - 1);
+  return MinFixedObjOffset;
+}
+
+bool BPFMIPreEmitPeephole::insertMissingCallerSavedSpills() {
+  MachineFrameInfo &MFI = MF->getFrameInfo();
+  SmallVector<NoCSRCall, 8> Calls;
+  LivePhysRegs LiveRegs;
+  const unsigned SlotSize = 8;
+  int64_t MinFixedObjOffset = computeMinFixedObjOffset(MFI, SlotSize);
+  bool Changed = false;
+  for (MachineBasicBlock &BB: *MF) {
+    collectNoCSRCalls(TRI, LiveRegs, BB, Calls);
+    Changed |= !Calls.empty();
+    for (NoCSRCall &Call: Calls) {
+      int64_t CurOffset = MinFixedObjOffset;
+      for (MCRegister Reg: CSRRegs) {
+        if (((1 << Reg) & Call.LiveCSRMask) == 0)
+          continue;
+        // Allocate stack object
+        CurOffset -= SlotSize;
+        MFI.CreateFixedSpillStackObject(SlotSize, CurOffset);
+        // Generate spill
+        BuildMI(BB, Call.MI->getIterator(), Call.MI->getDebugLoc(), TII->get(BPF::STD))
+          .addReg(Reg)
+          .addReg(BPF::R10)
+          .addImm(CurOffset)
+          .addImm(0);
+        // Generate fill
+        BuildMI(BB, ++Call.MI->getIterator(), Call.MI->getDebugLoc(), TII->get(BPF::LDD))
+          .addReg(Reg)
+          .addReg(BPF::R10)
+          .addImm(CurOffset)
+          .addImm(0);
+      }
+    }
+  }
   return Changed;
 }
 
