@@ -134,6 +134,7 @@ add_llvm_component_library(LLVMAnalysis
   TargetTransformInfo.cpp
   TensorSpec.cpp
   Trace.cpp
+  TracepointParams.cpp
   TrainingLogger.cpp
   TypeBasedAliasAnalysis.cpp
   TypeMetadataUtils.cpp
