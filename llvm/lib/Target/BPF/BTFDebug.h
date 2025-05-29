@@ -319,8 +319,7 @@ class BTFDebug : public DebugHandlerBase {
   /// IR type visiting functions.
   /// @{
   void visitTypeEntry(const DIType *Ty);
-  void visitTypeEntry(const DIType *Ty, uint32_t &TypeId, bool CheckPointer,
-                      bool SeenPointer);
+  void visitTypeEntry(const DIType *Ty, uint32_t &TypeId, bool StopAtPointer);
   void visitBasicType(const DIBasicType *BTy, uint32_t &TypeId);
   void visitSubroutineType(
       const DISubroutineType *STy, bool ForSubprog,
@@ -334,7 +333,7 @@ class BTFDebug : public DebugHandlerBase {
   void visitArrayType(const DICompositeType *ATy, uint32_t &TypeId);
   void visitEnumType(const DICompositeType *ETy, uint32_t &TypeId);
   void visitDerivedType(const DIDerivedType *DTy, uint32_t &TypeId,
-                        bool CheckPointer, bool SeenPointer);
+                        bool StopAtPointer);
   void visitMapDefType(const DIType *Ty, uint32_t &TypeId);
   /// @}
 

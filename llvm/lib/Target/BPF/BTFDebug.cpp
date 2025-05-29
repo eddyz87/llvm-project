@@ -707,7 +707,7 @@ void BTFDebug::visitArrayType(const DICompositeType *CTy, uint32_t &TypeId) {
   // Visit array element type.
   uint32_t ElemTypeId;
   const DIType *ElemType = CTy->getBaseType();
-  visitTypeEntry(ElemType, ElemTypeId, false, false);
+  visitTypeEntry(ElemType, ElemTypeId, false);
 
   // Visit array dimensions.
   DINodeArray Elements = CTy->getElements();
@@ -804,38 +804,81 @@ bool BTFDebug::IsForwardDeclCandidate(const DIType *Base) {
   return false;
 }
 
+static char *warnList = [
+  "bpf_local_storage",
+  "callback_head",
+  "cgroup",
+  "cred",
+  "dst_entry",
+  "hlist_node",
+  "hlist_nulls_node",
+  "hrtimer_clock_base",
+  "inet_bind2_bucket",
+  "inet_bind_bucket",
+  "inet_connection_sock_af_ops",
+  "inet_timewait_death_row",
+  "ip_mc_socklist",
+  "ip_options",
+  "ip_options_rcu",
+  "ipv6_pinfo",
+  "list_head",
+  "llist_node",
+  "lock_class_key",
+  "lockdep_subclass_key",
+  "mem_cgroup",
+  "module",
+  "net",
+  "net_device",
+  "page",
+  "pid",
+  "proto",
+  "rb_node",
+  "request_sock",
+  "saved_syn",
+  "skb_ext",
+  "sk_buff",
+  "sk_filter",
+  "sock",
+  "socket",
+  "socket_wq",
+  "sock_reuseport",
+  "tcp_congestion_ops",
+  "tcp_fastopen_context",
+  "tcp_fastopen_request",
+  "tcp_md5sig_info",
+  "tcp_sock_af_ops",
+  "tcp_ulp_ops",
+  "xfrm_sec_ctx",
+];
+
 /// Handle pointer, typedef, const, volatile, restrict and member types.
 void BTFDebug::visitDerivedType(const DIDerivedType *DTy, uint32_t &TypeId,
-                                bool CheckPointer, bool SeenPointer) {
+                                bool StopAtPointer) {
   unsigned Tag = DTy->getTag();
 
   if (Tag == dwarf::DW_TAG_atomic_type)
-    return visitTypeEntry(DTy->getBaseType(), TypeId, CheckPointer,
-                          SeenPointer);
-
-  /// Try to avoid chasing pointees, esp. structure pointees which may
-  /// unnecessary bring in a lot of types.
-  if (CheckPointer && !SeenPointer) {
-    SeenPointer = Tag == dwarf::DW_TAG_pointer_type && !DTy->getAnnotations();
-  }
-
-  if (CheckPointer && SeenPointer) {
-    const DIType *Base = DTy->getBaseType();
-    if (Base) {
-      if (IsForwardDeclCandidate(Base)) {
-        /// Find a candidate, generate a fixup. Later on the struct/union
-        /// pointee type will be replaced with either a real type or
-        /// a forward declaration.
-        auto TypeEntry = std::make_unique<BTFTypeDerived>(DTy, Tag, true);
-        auto &Fixup = FixupDerivedTypes[cast<DICompositeType>(Base)];
-        Fixup.push_back(std::make_pair(DTy, TypeEntry.get()));
-        TypeId = addType(std::move(TypeEntry), DTy);
-        return;
-      }
-    }
-  }
+    return visitTypeEntry(DTy->getBaseType(), TypeId, StopAtPointer);
 
   if (Tag == dwarf::DW_TAG_pointer_type) {
+    /// Try to avoid chasing pointees, esp. structure pointees which may
+    /// unnecessary bring in a lot of types.
+    const DIType *Base = DTy->getBaseType();
+    if (StopAtPointer && !DTy->getAnnotations() && Base && IsForwardDeclCandidate(Base)) {
+      /// Find a candidate, generate a fixup. Later on the struct/union
+      /// pointee type will be replaced with either a real type or
+      /// a forward declaration.
+      auto TypeEntry = std::make_unique<BTFTypeDerived>(DTy, Tag, true);
+      auto &Fixup = FixupDerivedTypes[cast<DICompositeType>(Base)];
+      Fixup.push_back(std::make_pair(DTy, TypeEntry.get()));
+      TypeId = addType(std::move(TypeEntry), DTy);
+      return;
+    }
+
+    for (int i = 0; i < sizeof(warnList) / sizeof(*warnList); i++) {
+      if (StringRef(warnList[i]) == Base->getName())
+        llvm::dbgs() << "visitDerivedType: can't stop at " << Base->getName() << "\n";
+    }
+
     int TmpTypeId = genBTFTypeTags(DTy, -1);
     if (TmpTypeId >= 0) {
       auto TypeDEntry =
@@ -859,10 +902,17 @@ void BTFDebug::visitDerivedType(const DIDerivedType *DTy, uint32_t &TypeId,
   // Visit base type of pointer, typedef, const, volatile, restrict or
   // struct/union member.
   uint32_t TempTypeId = 0;
-  if (Tag == dwarf::DW_TAG_member)
-    visitTypeEntry(DTy->getBaseType(), TempTypeId, true, false);
-  else
-    visitTypeEntry(DTy->getBaseType(), TempTypeId, CheckPointer, SeenPointer);
+  visitTypeEntry(DTy->getBaseType(), TempTypeId,
+                 StopAtPointer || Tag == dwarf::DW_TAG_member);
+}
+
+static const DIDerivedType *findPointerType(const DIType *Ty) {
+  while (const auto *DTy = dyn_cast_or_null<DIDerivedType>(Ty)) {
+    if (DTy->getTag() == dwarf::DW_TAG_pointer_type)
+      return DTy;
+    Ty = DTy->getBaseType();
+  }
+  return NULL;
 }
 
 /// Visit a type entry. CheckPointer is true if the type has
@@ -873,7 +923,7 @@ void BTFDebug::visitDerivedType(const DIDerivedType *DTy, uint32_t &TypeId,
 /// will not be emitted in BTF and rather forward declarations
 /// will be generated.
 void BTFDebug::visitTypeEntry(const DIType *Ty, uint32_t &TypeId,
-                              bool CheckPointer, bool SeenPointer) {
+                              bool StopAtPointer) {
   if (!Ty || DIToIdMap.find(Ty) != DIToIdMap.end()) {
     TypeId = DIToIdMap[Ty];
 
@@ -906,30 +956,9 @@ void BTFDebug::visitTypeEntry(const DIType *Ty, uint32_t &TypeId,
     // We will traverse const/ptr/volatile which already have corresponding
     // BTF types and generate type for 'struct' which might be in Fixup
     // state.
-    if (Ty && (!CheckPointer || !SeenPointer)) {
-      if (const auto *DTy = dyn_cast<DIDerivedType>(Ty)) {
-        while (DTy) {
-          const DIType *BaseTy = DTy->getBaseType();
-          if (!BaseTy)
-            break;
-
-          if (DIToIdMap.find(BaseTy) != DIToIdMap.end()) {
-            DTy = dyn_cast<DIDerivedType>(BaseTy);
-          } else {
-            if (CheckPointer && DTy->getTag() == dwarf::DW_TAG_pointer_type &&
-                !DTy->getAnnotations()) {
-              SeenPointer = true;
-              if (IsForwardDeclCandidate(BaseTy))
-                break;
-            }
-            uint32_t TmpTypeId;
-            visitTypeEntry(BaseTy, TmpTypeId, CheckPointer, SeenPointer);
-            break;
-          }
-        }
-      }
-    }
-
+    if (Ty && !StopAtPointer)
+        if (const DIDerivedType *DTy = findPointerType(Ty))
+          visitTypeEntry(DTy->getBaseType());
     return;
   }
 
@@ -941,14 +970,14 @@ void BTFDebug::visitTypeEntry(const DIType *Ty, uint32_t &TypeId,
   else if (const auto *CTy = dyn_cast<DICompositeType>(Ty))
     visitCompositeType(CTy, TypeId);
   else if (const auto *DTy = dyn_cast<DIDerivedType>(Ty))
-    visitDerivedType(DTy, TypeId, CheckPointer, SeenPointer);
+    visitDerivedType(DTy, TypeId, StopAtPointer);
   else
     llvm_unreachable("Unknown DIType");
 }
 
 void BTFDebug::visitTypeEntry(const DIType *Ty) {
   uint32_t TypeId;
-  visitTypeEntry(Ty, TypeId, false, false);
+  visitTypeEntry(Ty, TypeId, false);
 }
 
 void BTFDebug::visitMapDefType(const DIType *Ty, uint32_t &TypeId) {
@@ -984,7 +1013,7 @@ void BTFDebug::visitMapDefType(const DIType *Ty, uint32_t &TypeId) {
   }
 
   // Visit this type, struct or a const/typedef/volatile/restrict type
-  visitTypeEntry(OrigTy, TypeId, false, false);
+  visitTypeEntry(OrigTy, TypeId, false);
 }
 
 /// Read file contents from the actual file or from the source
@@ -1262,7 +1291,7 @@ void BTFDebug::endFunctionImpl(const MachineFunction *MF) {
 /// accessing or preserve debuginfo type.
 unsigned BTFDebug::populateType(const DIType *Ty) {
   unsigned Id;
-  visitTypeEntry(Ty, Id, false, false);
+  visitTypeEntry(Ty, Id, false);
   for (const auto &TypeEntry : TypeEntries)
     TypeEntry->completeType(*this);
   return Id;
@@ -1461,7 +1490,7 @@ void BTFDebug::processGlobals(bool ProcessingMapDef) {
         visitMapDefType(DIGlobal->getType(), GVTypeId);
       else {
         const DIType *Ty = tryRemoveAtomicType(DIGlobal->getType());
-        visitTypeEntry(Ty, GVTypeId, false, false);
+        visitTypeEntry(Ty, GVTypeId, false);
       }
       break;
     }
