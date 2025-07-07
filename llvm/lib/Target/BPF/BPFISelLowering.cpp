@@ -14,10 +14,12 @@
 #include "BPFISelLowering.h"
 #include "BPF.h"
 #include "BPFSubtarget.h"
+#include "llvm/BinaryFormat/ELF.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/ValueTypes.h"
@@ -25,6 +27,7 @@
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/Module.h"
+#include "llvm/MC/MCSymbolELF.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
@@ -811,6 +814,8 @@ const char *BPFTargetLowering::getTargetNodeName(unsigned Opcode) const {
     return "BPFISD::Wrapper";
   case BPFISD::MEMCPY:
     return "BPFISD::MEMCPY";
+  case BPFISD::BPF_JT_RELO:
+    return "BPFISD::BPF_JT_RELO";
   }
   return nullptr;
 }
@@ -1100,4 +1105,33 @@ bool BPFTargetLowering::isLegalAddressingMode(const DataLayout &DL,
   }
 
   return true;
+}
+
+MCSymbol *BPFTargetLowering::getBPFJTSymbol(const MachineFunction *MF, MCContext &Ctx, unsigned JTID) {
+  assert(MF->getJumpTableInfo() && "No jump tables");
+  assert(JTID < MF->getJumpTableInfo()->getJumpTables().size() && "Invalid JTI!");
+  SmallString<60> Name;
+  raw_svector_ostream(Name)
+    << ".BPF.JT." << MF->getFunctionNumber() << '.' << JTID;
+  MCSymbol *S = Ctx.getOrCreateSymbol(Name);
+  if (auto *ES = dyn_cast<MCSymbolELF>(S)) {
+    // TODO: how to achieve this w/o casting to MCSymbolELF?
+    ES->setBinding(ELF::STB_GLOBAL);
+  }
+  return S;
+}
+
+const MCExpr *
+BPFTargetLowering::getPICJumpTableRelocBaseExpr(const MachineFunction *MF,
+                                                unsigned JTI, MCContext &Ctx) const {
+  MCSymbol *L = getBPFJTSymbol(MF, Ctx, JTI);
+  return MCSymbolRefExpr::create(L, Ctx);
+}
+
+SDValue BPFTargetLowering::expandIndirectJTBranch(const SDLoc &dl, SDValue Value,
+                                                  SDValue Addr, int JTI,
+                                                  SelectionDAG &DAG) const {
+  SDValue JTIVal = DAG.getConstant(static_cast<uint64_t>(JTI), dl, MVT::i32, false);
+  SDValue Chain = DAG.getNode(BPFISD::BPF_JT_RELO, dl, MVT::Glue, Value, JTIVal);
+  return TargetLowering::expandIndirectJTBranch(dl, Chain, Addr, JTI, DAG);
 }

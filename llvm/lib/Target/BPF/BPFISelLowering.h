@@ -28,7 +28,8 @@ enum NodeType : unsigned {
   SELECT_CC,
   BR_CC,
   Wrapper,
-  MEMCPY
+  MEMCPY,
+  BPF_JT_RELO,
 };
 }
 
@@ -65,6 +66,14 @@ public:
                          EVT VT) const override;
 
   MVT getScalarShiftAmountTy(const DataLayout &, EVT) const override;
+
+  virtual const MCExpr *
+  getPICJumpTableRelocBaseExpr(const MachineFunction *MF,
+                               unsigned JTI, MCContext &Ctx) const override;
+  virtual SDValue expandIndirectJTBranch(const SDLoc &dl, SDValue Value,
+                                         SDValue Addr, int JTI,
+                                         SelectionDAG &DAG) const override;
+  static MCSymbol *getBPFJTSymbol(const MachineFunction *MF, MCContext &Ctx, unsigned JTID);
 
 private:
   // Control Instruction Selection Features

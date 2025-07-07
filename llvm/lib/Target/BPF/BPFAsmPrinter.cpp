@@ -15,12 +15,17 @@
 #include "BPFInstrInfo.h"
 #include "BPFMCInstLower.h"
 #include "BTFDebug.h"
+#include "BPFISelLowering.h"
 #include "MCTargetDesc/BPFInstPrinter.h"
 #include "TargetInfo/BPFTargetInfo.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/MC/MCSymbolELF.h"
+#include "llvm/BinaryFormat/ELF.h"
+#include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInst.h"
@@ -49,6 +54,7 @@ public:
                              const char *ExtraCode, raw_ostream &O) override;
 
   void emitInstruction(const MachineInstr *MI) override;
+  virtual void emitJumpTableInfo() override;
 
   static char ID;
 
@@ -58,7 +64,6 @@ private:
 } // namespace
 
 bool BPFAsmPrinter::doInitialization(Module &M) {
-  EmitJumpTableSizesSection = true;
   AsmPrinter::doInitialization(M);
 
   // Only emit BTF when debuginfo available.
@@ -144,11 +149,54 @@ void BPFAsmPrinter::emitInstruction(const MachineInstr *MI) {
 
   MCInst TmpInst;
 
+  if (MI->getOpcode() == BPF::JT_RELO) {
+    const MachineFunction *MF = MI->getMF();
+    MCContext &Ctx = MF->getContext();
+    uint64_t JTI = MI->getOperand(0).getImm();
+    MCSymbol *JT = BPFTargetLowering::getBPFJTSymbol(MF, Ctx, JTI);
+    const MCExpr *Zero = MCConstantExpr::create(0, Ctx);
+    OutStreamer->emitRelocDirective(*Zero,
+                                    "FK_SecRel_8",
+                                    MCSymbolRefExpr::create(JT, Ctx),
+                                    {},
+                                    *Ctx.getSubtargetInfo());
+    return;
+  }
   if (!BTF || !BTF->InstLower(MI, TmpInst)) {
     BPFMCInstLower MCInstLowering(OutContext, *this);
     MCInstLowering.Lower(MI, TmpInst);
   }
   EmitToStreamer(*OutStreamer, TmpInst);
+}
+
+void BPFAsmPrinter::emitJumpTableInfo() {
+  const MachineJumpTableInfo *MJTI = MF->getJumpTableInfo();
+  if (!MJTI) return;
+
+  const std::vector<MachineJumpTableEntry> &JT = MJTI->getJumpTables();
+  if (JT.empty()) return;
+
+  const TargetLoweringObjectFile &TLOF = getObjFileLowering();
+  const Function &F = MF->getFunction();
+  MCSection *JTS = TLOF.getSectionForJumpTable(F, TM);
+  OutStreamer->switchSection(JTS);
+  for (unsigned JTI = 0; JTI < JT.size(); JTI++) {
+    ArrayRef<MachineBasicBlock *> JTBBs = JT[JTI].MBBs;
+    if (JTBBs.empty())
+      continue;
+
+    MCSymbol *JTStart = BPFTargetLowering::getBPFJTSymbol(MF, OutContext, JTI);
+    MCSymbol *JTEnd = OutContext.createTempSymbol();
+    OutStreamer->emitLabel(JTStart);
+    for (const MachineBasicBlock *MBB : JTBBs)
+      emitJumpTableEntry(*MJTI, MBB, JTI);
+    OutStreamer->emitLabel(JTEnd);
+    const MCExpr *SizeExpr =
+      MCBinaryExpr::createSub(MCSymbolRefExpr::create(JTEnd, OutContext),
+                              MCSymbolRefExpr::create(JTStart, OutContext),
+                              OutContext);
+    OutStreamer->emitELFSize(JTStart, SizeExpr);
+  }
 }
 
 char BPFAsmPrinter::ID = 0;

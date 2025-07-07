@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "BPFMCInstLower.h"
+#include "BPFISelLowering.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -78,7 +79,7 @@ void BPFMCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
       MCOp = LowerSymbolOperand(MO, Printer.GetCPISymbol(MO.getIndex()));
       break;
     case MachineOperand::MO_JumpTableIndex:
-      MCOp = LowerSymbolOperand(MO, Printer.GetJTISymbol(MO.getIndex()));
+      MCOp = LowerSymbolOperand(MO, BPFTargetLowering::getBPFJTSymbol(MI->getMF(), Ctx, MO.getIndex()));
       break;
     }
 

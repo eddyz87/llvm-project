@@ -31,6 +31,7 @@ def SDT_BPFMEMCPY       : SDTypeProfile<0, 4, [SDTCisVT<0, i64>,
                                                SDTCisVT<1, i64>,
                                                SDTCisVT<2, i64>,
                                                SDTCisVT<3, i64>]>;
+def SDT_BPFJtRelo       : SDTypeProfile<0, 1, [SDTCisVT<0, i32>]>;
 
 def BPFcall         : SDNode<"BPFISD::CALL", SDT_BPFCall,
                              [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
@@ -49,6 +50,10 @@ def BPFWrapper      : SDNode<"BPFISD::Wrapper", SDT_BPFWrapper>;
 def BPFmemcpy       : SDNode<"BPFISD::MEMCPY", SDT_BPFMEMCPY,
                              [SDNPHasChain, SDNPInGlue, SDNPOutGlue,
                               SDNPMayStore, SDNPMayLoad]>;
+def BPFJtRelo       : SDNode<"BPFISD::BPF_JT_RELO", SDT_BPFJtRelo,
+                             [SDNPHasChain, SDNPOutGlue, SDNPInGlue,
+                              SDNPSideEffect]>;
+
 def BPFIsLittleEndian : Predicate<"Subtarget->isLittleEndian()">;
 def BPFIsBigEndian    : Predicate<"!Subtarget->isLittleEndian()">;
 def BPFHasALU32 : Predicate<"Subtarget->getHasAlu32()">;
@@ -1398,4 +1403,12 @@ let usesCustomInserter = 1, isCodeGenOnly = 1 in {
       (ins GPR:$dst, GPR:$src, i64imm:$len, i64imm:$align, variable_ops),
       "#memcpy dst: $dst, src: $src, len: $len, align: $align",
       [(BPFmemcpy GPR:$dst, GPR:$src, imm:$len, imm:$align)]>;
+}
+
+let isCodeGenOnly = 1 in {
+    def JT_RELO : Pseudo<
+      (outs),
+      (ins i32imm:$jt),
+      "jt_relo $jt",
+      [(BPFJtRelo imm:$jt)]>;
 }
