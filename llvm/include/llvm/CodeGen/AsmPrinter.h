@@ -654,7 +654,7 @@ public:
   MCSymbol *GetExternalSymbolSymbol(const Twine &Sym) const;
 
   /// Return the symbol for the specified jump table entry.
-  MCSymbol *GetJTISymbol(unsigned JTID, bool isLinkerPrivate = false) const;
+  virtual MCSymbol *GetJTISymbol(unsigned JTID, bool isLinkerPrivate = false) const;
 
   /// Return the symbol for the specified jump table .set
   /// FIXME: privatize to AsmPrinter.

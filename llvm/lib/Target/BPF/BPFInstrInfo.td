@@ -31,6 +31,8 @@ def SDT_BPFMEMCPY       : SDTypeProfile<0, 4, [SDTCisVT<0, i64>,
                                                SDTCisVT<1, i64>,
                                                SDTCisVT<2, i64>,
                                                SDTCisVT<3, i64>]>;
+def SDT_BPFBrJt         : SDTypeProfile<0, 2, [SDTCisVT<0, i32>,    // jump table
+                                               SDTCisVT<1, i64>]>;  // index
 
 def BPFcall         : SDNode<"BPFISD::CALL", SDT_BPFCall,
                              [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
@@ -49,6 +51,9 @@ def BPFWrapper      : SDNode<"BPFISD::Wrapper", SDT_BPFWrapper>;
 def BPFmemcpy       : SDNode<"BPFISD::MEMCPY", SDT_BPFMEMCPY,
                              [SDNPHasChain, SDNPInGlue, SDNPOutGlue,
                               SDNPMayStore, SDNPMayLoad]>;
+def BPFBrJt         : SDNode<"BPFISD::BPF_BR_JT", SDT_BPFBrJt,
+                             [SDNPHasChain]>;
+
 def BPFIsLittleEndian : Predicate<"Subtarget->isLittleEndian()">;
 def BPFIsBigEndian    : Predicate<"!Subtarget->isLittleEndian()">;
 def BPFHasALU32 : Predicate<"Subtarget->getHasAlu32()">;
@@ -228,7 +233,7 @@ class JMP_RI<BPFJumpOp Opc, string OpcodeStr, PatLeaf Cond>
 class JMP_IND<BPFJumpOp Opc, string OpcodeStr, list<dag> Pattern>
     : TYPE_ALU_JMP<Opc.Value, BPF_X.Value,
                    (outs),
-                   (ins GPR:$dst),
+                   (ins GPR:$dst, i32imm:$jt),
                    !strconcat(OpcodeStr, " $dst"),
                    Pattern> {
   bits<4> dst;
@@ -304,7 +309,7 @@ defm JSET : J<BPF_JSET, "&", NoCond, NoCond>;
 def JCOND : JMP_JCOND<BPF_JCOND, "may_goto", []>;
 
 let isIndirectBranch = 1 in {
-  def JX : JMP_IND<BPF_JA, "gotox", [(brind i64:$dst)]>;
+  def JX : JMP_IND<BPF_JA, "gotox", [(BPFBrJt tjumptable:$jt, i64:$dst)]>;
 }
 }
 
@@ -876,8 +881,6 @@ let usesCustomInserter = 1, isCodeGenOnly = 1 in {
 // load 64-bit global addr into register
 def : Pat<(BPFWrapper tglobaladdr:$in), (LD_imm64 tglobaladdr:$in)>;
 def : Pat<(BPFWrapper tconstpool:$in), (LD_imm64 tconstpool:$in)>;
-def : Pat<(BPFWrapper tblockaddress:$in), (LD_imm64 tblockaddress:$in)>;
-def : Pat<(BPFWrapper tjumptable:$in), (LD_imm64 tjumptable:$in)>;
 
 // 0xffffFFFF doesn't fit into simm32, optimize common case
 def : Pat<(i64 (and (i64 GPR:$src), 0xffffFFFF)),
