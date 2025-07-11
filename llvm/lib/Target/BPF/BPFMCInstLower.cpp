@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "BPFAsmPrinter.h"
 #include "BPFMCInstLower.h"
 #include "BPFISelLowering.h"
 #include "llvm/CodeGen/AsmPrinter.h"
@@ -57,9 +58,8 @@ MCOperand BPFMCInstLower::LowerJTIOperand(const MachineInstr &MI,
   //        gotox r1
   assert((MI.getOpcode() == BPF::JX) &&
          "Jump Table Index operands are expected only for JX instructions");
-  const MachineFunction *MF = MI.getMF();
-  Printer.OutStreamer->emitLabel(BPFTargetLowering::getJXAnchorSymbol(MF, JTI));
-  MCSymbol *JT = Printer.GetJTISymbol(JTI);
+  Printer.OutStreamer->emitLabel(Printer.getJXAnchorSymbol(JTI));
+  MCSymbol *JT = Printer.getJTPublicSymbol(JTI);
   const MCExpr *Zero = MCConstantExpr::create(0, Ctx);
   Printer.OutStreamer->emitRelocDirective(*Zero, "FK_SecRel_8",
                                           MCSymbolRefExpr::create(JT, Ctx), {},
