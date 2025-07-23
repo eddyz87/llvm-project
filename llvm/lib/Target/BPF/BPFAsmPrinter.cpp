@@ -222,6 +222,9 @@ void BPFAsmPrinter::emitJumpTableInfo() {
   const TargetLoweringObjectFile &TLOF = getObjFileLowering();
   const Function &F = MF->getFunction();
   MCSection *JTS = TLOF.getSectionForJumpTable(F, TM);
+  MCSymbol *JTSBegin = MF->getSection()->getBeginSymbol();
+  assert(JTSBegin);
+  const MCExpr *JTSBeginExpr = MCSymbolRefExpr::create(JTSBegin, OutContext);
   assert(MJTI->getEntryKind() == MachineJumpTableInfo::EK_LabelDifference64);
   unsigned EntrySize = MJTI->getEntrySize(getDataLayout());
   OutStreamer->switchSection(JTS);
@@ -230,11 +233,34 @@ void BPFAsmPrinter::emitJumpTableInfo() {
     if (JTBBs.empty())
       continue;
 
+    SmallPtrSet<const MachineBasicBlock *, 16> EmittedSets;
+    for (const MachineBasicBlock *MBB : JTBBs) {
+      if (!EmittedSets.insert(MBB).second)
+        continue;
+
+      // Offset from gotox to target basic block expressed in number
+      // of instructions, e.g.:
+      //
+      //   .L0_0_set_4 = ((LBB0_4 - <section-start>) >> 3) - 1
+      const MCExpr *LHS = MCSymbolRefExpr::create(MBB->getSymbol(), OutContext);
+      OutStreamer->emitAssignment(
+        GetJTSetSymbol(JTI, MBB->getNumber()),
+        MCBinaryExpr::createAShr(
+          MCBinaryExpr::createSub(LHS, JTSBeginExpr, OutContext),
+          MCConstantExpr::create(3, OutContext),
+          OutContext));
+    }
+    // BPF.JT.0.0:
+    //    .quad   .L0_0_set_4
+    //    .quad   .L0_0_set_2
+    //    ...
+    //    .size   BPF.JT.0.0, 128
     MCSymbol *JTStart = getJTPublicSymbol(JTI);
     OutStreamer->emitLabel(JTStart);
     for (const MachineBasicBlock *MBB : JTBBs) {
-      const MCExpr *LHS = MCSymbolRefExpr::create(MBB->getSymbol(), OutContext);
-      OutStreamer->emitValue(LHS, EntrySize);
+      MCSymbol *SetSymbol = GetJTSetSymbol(JTI, MBB->getNumber());
+      const MCExpr *V = MCSymbolRefExpr::create(SetSymbol, OutContext);
+      OutStreamer->emitValue(V, EntrySize);
     }
     const MCExpr *JTSize =
         MCConstantExpr::create(JTBBs.size() * EntrySize, OutContext);

@@ -154,4 +154,9 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeBPFTargetMC() {
     TargetRegistry::RegisterMCAsmBackend(getTheBPFTarget(),
                                          createBPFbeAsmBackend);
   }
+
+  TargetRegistry::RegisterAsmTargetStreamer(getTheBPFTarget(),
+                                            createBPFAsmTargetStreamer);
+  TargetRegistry::RegisterObjectTargetStreamer(getTheBPFTarget(),
+                                               createBPFObjectTargetStreamer);
 }

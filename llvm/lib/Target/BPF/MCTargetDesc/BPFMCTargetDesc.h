@@ -15,7 +15,9 @@
 
 #include "llvm/Config/config.h"
 #include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCStreamer.h"
 #include "llvm/Support/DataTypes.h"
+#include "llvm/Support/FormattedStream.h"
 
 #include <memory>
 
@@ -42,6 +44,14 @@ MCAsmBackend *createBPFbeAsmBackend(const Target &T, const MCSubtargetInfo &STI,
                                     const MCTargetOptions &Options);
 
 std::unique_ptr<MCObjectTargetWriter> createBPFELFObjectWriter(uint8_t OSABI);
+
+MCTargetStreamer *createBPFAsmTargetStreamer(MCStreamer &S,
+                                             formatted_raw_ostream &OS,
+                                             MCInstPrinter *InstPrinter);
+
+MCTargetStreamer *createBPFObjectTargetStreamer(MCStreamer &S,
+                                                const MCSubtargetInfo &STI);
+
 } // namespace llvm
 
 // Defines symbolic names for BPF registers.  This defines a mapping from
