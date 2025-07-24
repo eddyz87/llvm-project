@@ -963,7 +963,8 @@ void BTFDebug::visitMapDefType(const DIType *Ty, uint32_t &TypeId) {
     auto Tag = DTy->getTag();
     if (Tag != dwarf::DW_TAG_typedef && Tag != dwarf::DW_TAG_const_type &&
         Tag != dwarf::DW_TAG_volatile_type &&
-        Tag != dwarf::DW_TAG_restrict_type)
+        Tag != dwarf::DW_TAG_restrict_type &&
+        Tag != dwarf::DW_TAG_pointer_type)
       break;
     Ty = DTy->getBaseType();
   }
@@ -973,26 +974,34 @@ void BTFDebug::visitMapDefType(const DIType *Ty, uint32_t &TypeId) {
     return;
 
   auto Tag = CTy->getTag();
-  if (Tag != dwarf::DW_TAG_structure_type || CTy->isForwardDecl())
+  if ((Tag != dwarf::DW_TAG_structure_type &&
+       Tag != dwarf::DW_TAG_array_type) ||
+      CTy->isForwardDecl())
     return;
 
-  // Visit all struct members to ensure their types are visited.
-  const DINodeArray Elements = CTy->getElements();
-  for (const auto *Element : Elements) {
-    const auto *MemberType = cast<DIDerivedType>(Element);
-    const DIType *MemberBaseType = MemberType->getBaseType();
+  // Visit potential nested map array
+  if (CTy->getTag() == dwarf::DW_TAG_array_type) {
+    // Jump to the element type of the array
+    visitMapDefType(CTy->getBaseType(), TypeId);
+  } else {
+    // Visit all struct members to ensure their types are visited.
+    const DINodeArray Elements = CTy->getElements();
+    for (const auto *Element : Elements) {
+      const auto *MemberType = cast<DIDerivedType>(Element);
+      const DIType *MemberBaseType = MemberType->getBaseType();
 
-    // If the member is a composite type, that may indicate the currently
-    // visited composite type is a wrapper, and the member represents the
-    // actual map definition.
-    // In that case, visit the member with `visitMapDefType` instead of
-    // `visitTypeEntry`, treating it specifically as a map definition rather
-    // than as a regular composite type.
-    const auto *MemberCTy = dyn_cast<DICompositeType>(MemberBaseType);
-    if (MemberCTy) {
-      visitMapDefType(MemberBaseType, TypeId);
-    } else {
-      visitTypeEntry(MemberBaseType);
+      // If the member is a composite type, that may indicate the currently
+      // visited composite type is a wrapper, and the member represents the
+      // actual map definition.
+      // In that case, visit the member with `visitMapDefType` instead of
+      // `visitTypeEntry`, treating it specifically as a map definition rather
+      // than as a regular composite type.
+      const auto *MemberCTy = dyn_cast<DICompositeType>(MemberBaseType);
+      if (MemberCTy) {
+        visitMapDefType(MemberBaseType, TypeId);
+      } else {
+        visitTypeEntry(MemberBaseType);
+      }
     }
   }
 
