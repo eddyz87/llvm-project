@@ -83,15 +83,13 @@ void BPFSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
     return;
   }
   if (CPU == "v3") {
-    HasJmpExt = true;
+    initSubtargetFeatures("v2", FS);
     HasJmp32 = true;
     HasAlu32 = true;
     return;
   }
   if (CPU == "v4") {
-    HasJmpExt = true;
-    HasJmp32 = true;
-    HasAlu32 = true;
+    initSubtargetFeatures("v3", FS);
     HasLdsx = !Disable_ldsx;
     HasMovsx = !Disable_movsx;
     HasBswap = !Disable_bswap;
