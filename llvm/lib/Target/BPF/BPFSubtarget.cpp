@@ -46,6 +46,9 @@ static cl::opt<bool> Disable_load_acq_store_rel(
 static cl::opt<bool> Disable_gotox("disable-gotox", cl::Hidden, cl::init(false),
                                    cl::desc("Disable gotox insn"));
 
+static cl::opt<bool> Disable_spill_base_reg("disable-spill-base-reg", cl::Hidden, cl::init(false),
+                                            cl::desc("Disable separate base register for spill/fills"));
+
 void BPFSubtarget::anchor() {}
 
 BPFSubtarget &BPFSubtarget::initializeSubtargetDependencies(StringRef CPU,
@@ -69,6 +72,7 @@ void BPFSubtarget::initializeEnvironment() {
   HasStoreImm = false;
   HasLoadAcqStoreRel = false;
   HasGotox = false;
+  HasSpillBaseReg = false;
 }
 
 void BPFSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
@@ -98,6 +102,11 @@ void BPFSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
     HasStoreImm = !Disable_StoreImm;
     HasLoadAcqStoreRel = !Disable_load_acq_store_rel;
     HasGotox = !Disable_gotox;
+    return;
+  }
+  if (CPU == "v5") {
+    initSubtargetFeatures("v4", FS);
+    HasSpillBaseReg = true;
     return;
   }
 }
